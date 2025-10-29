@@ -32,12 +32,12 @@ export default function IncidentList({ incidentType, statusFilter, refreshToken,
 
   return (
     <div className="mt-6 space-y-4">
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>
+      <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-center sm:text-left">
           Showing <strong>{incidents.length}</strong> threads
         </span>
         <button
-          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
+          className="w-full rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink sm:w-auto"
           onClick={load}
         >
           Refresh list

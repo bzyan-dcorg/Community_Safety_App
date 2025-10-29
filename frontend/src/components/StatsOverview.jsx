@@ -24,16 +24,16 @@ export default function StatsOverview({ stats, error, onRefresh }) {
 
   return (
     <section className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-lg backdrop-blur-md">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Signal Overview</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-ink sm:text-lg">Signal Overview</h2>
+          <p className="text-sm text-slate-500 sm:text-base">
             Blend of civic, police, and public order inputs with credibility scoring.
           </p>
         </div>
         <button
           onClick={onRefresh}
-          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
+          className="w-full rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink sm:w-auto"
         >
           Refresh
         </button>
@@ -45,14 +45,14 @@ export default function StatsOverview({ stats, error, onRefresh }) {
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <article
             key={card.label}
             className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lg"
           >
             <p className="text-xs uppercase tracking-wide text-slate-400">{card.label}</p>
-            <p className="mt-2 text-3xl font-semibold text-ink">{card.value}</p>
+            <p className="mt-2 text-2xl font-semibold text-ink sm:text-3xl">{card.value}</p>
             <p className="mt-1 text-xs text-slate-500">{card.helper}</p>
           </article>
         ))}

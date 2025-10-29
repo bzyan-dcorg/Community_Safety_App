@@ -173,11 +173,11 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
   }
 
   return (
-    <section className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-sm">
-      <div className="flex items-center justify-between">
+    <section className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-lg backdrop-blur-sm sm:p-6">
+      <div className="flex flex-col gap-2 xs:flex-row xs:items-start xs:justify-between xs:gap-4 md:items-center">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Share a community signal</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="text-base font-semibold text-ink xs:text-lg md:text-xl">Share a community signal</h2>
+          <p className="text-xs text-slate-500 xs:text-sm md:text-base">
             Photos/video optional. Block-level privacy by default.
           </p>
         </div>
@@ -250,7 +250,7 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
           />
         </div>
 
-        <div className="grid gap-4 rounded-3xl bg-white/60 p-4 sm:grid-cols-2">
+        <div className="grid gap-4 rounded-3xl bg-white/60 p-4 xs:p-5 md:grid-cols-2">
           <PromptControl
             label="Is it still happening?"
             value={stillHappeningChoice}

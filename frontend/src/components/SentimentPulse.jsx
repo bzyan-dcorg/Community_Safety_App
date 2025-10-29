@@ -11,10 +11,10 @@ export default function SentimentPulse({ stats, categories }) {
 
   return (
     <section className="rounded-3xl border border-white/50 bg-white/70 p-6 shadow-lg backdrop-blur-md">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Sentiment Pulse</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-ink sm:text-lg">Sentiment Pulse</h2>
+          <p className="text-sm text-slate-500 sm:text-base">
             Snapshot of how residents feel after reporting an issue.
           </p>
         </div>

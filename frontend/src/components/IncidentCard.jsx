@@ -198,8 +198,8 @@ export default function IncidentCard({ incident, onMutated }) {
   }
 
   return (
-    <article className="rounded-3xl border border-white/70 bg-white/90 p-5 shadow-lg backdrop-blur">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-lg backdrop-blur xs:p-5 md:p-6">
+      <div className="flex flex-col gap-4 xs:gap-5 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${
@@ -220,18 +220,18 @@ export default function IncidentCard({ incident, onMutated }) {
               </span>
             )}
           </div>
-          <h3 className="text-lg font-semibold text-ink">{incident.category}</h3>
-          <p className="text-sm text-slate-600 whitespace-pre-line">{incident.description}</p>
+          <h3 className="text-base font-semibold text-ink xs:text-lg">{incident.category}</h3>
+          <p className="text-sm text-slate-600 whitespace-pre-line xs:text-base">{incident.description}</p>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-            <span>{formatTimestamp(incident.created_at)}</span>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 xs:gap-3">
+            <span className="whitespace-nowrap">{formatTimestamp(incident.created_at)}</span>
             {incident.location_text && <span>📍 {incident.location_text}</span>}
             <span>Reporter: {incident.reporter_alias || "Community member"}</span>
           </div>
         </div>
 
-        <div className="w-full sm:w-48">
-          <div className="rounded-2xl bg-slate-100/70 px-3 py-3 text-[11px] text-slate-600">
+        <div className="w-full md:w-56 md:max-w-xs">
+          <div className="rounded-2xl bg-slate-100/70 px-3 py-3 text-[11px] text-slate-600 md:px-4 md:py-4">
             <div className="flex items-center justify-between">
               <span>Credibility</span>
               <span className="font-semibold text-ink">{credibilityPercent}%</span>
@@ -282,8 +282,8 @@ export default function IncidentCard({ incident, onMutated }) {
       )}
 
       {showComposer && (
-        <form onSubmit={handleFollowUpSubmit} className="mt-6 space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-4">
-          <h4 className="text-sm font-semibold text-ink">Record a follow-up</h4>
+        <form onSubmit={handleFollowUpSubmit} className="mt-6 space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-4 xs:p-5">
+          <h4 className="text-sm font-semibold text-ink xs:text-base">Record a follow-up</h4>
           <Segmented value={followStatus} onChange={setFollowStatus} options={STATUS_OPTIONS} />
           <PromptToggle label="Is it still happening?" value={followStillHappening} onChange={setFollowStillHappening} />
           <PromptToggle label="Do people feel safe now?" value={followFeelSafe} onChange={setFollowFeelSafe} />
