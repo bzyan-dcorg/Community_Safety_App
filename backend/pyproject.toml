@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "community-safety-backend"
+version = "0.1.0"
+description = "Community Safety backend application"
+readme = "readmed.md"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["backend"]

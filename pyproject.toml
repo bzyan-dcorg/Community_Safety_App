@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "community-safety-backend"
+version = "0.1.0"
+description = "Community Safety backend application"
+readme = "backend/readmed.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "pydantic",
+    "pydantic-settings",
+    "python-multipart",
+]
+
+[tool.setuptools]
+packages = ["backend"]
+package-dir = { "backend" = "backend" }

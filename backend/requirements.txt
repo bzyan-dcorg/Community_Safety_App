@@ -1,0 +1,8 @@
+# Install dependencies while in backend/ (pip install -r requirements.txt)
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pydantic-settings
+python-multipart
+-e ..

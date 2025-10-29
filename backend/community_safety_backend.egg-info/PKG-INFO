@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: community-safety-backend
+Version: 0.1.0
+Summary: Community Safety backend application
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# RUN
+
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows - venv\\Scripts\\activate
+pip install -r requirements.txt  # installs dependencies and the backend package
+uvicorn backend.main:app --reload
