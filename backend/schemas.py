@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, constr
 
 IncidentType = Literal["police", "community", "public-order"]
 ContactedAuthorities = Literal["unknown", "none", "service-request", "911", "not-needed"]
@@ -101,13 +101,112 @@ class IncidentFollowUpPublic(IncidentFollowUpBase):
         from_attributes = True
 
 
+class UserSummary(BaseModel):
+    id: int
+    display_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserProfile(UserSummary):
+    email: EmailStr
+    auth_provider: str
+
+    class Config:
+        from_attributes = True
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserProfile
+
+
+class AuthEmailRegister(BaseModel):
+    email: EmailStr
+    password: constr(min_length=8)
+    display_name: Optional[str] = Field(None, max_length=100)
+
+
+class AuthEmailLogin(BaseModel):
+    email: EmailStr
+    password: constr(min_length=8)
+
+
+class AuthOAuthPayload(BaseModel):
+    provider: Literal["google", "apple"]
+    id_token: str = Field(..., description="Opaque token verified client-side")
+    email: Optional[EmailStr] = None
+    display_name: Optional[str] = Field(None, max_length=100)
+
+
+class IncidentCommentCreate(BaseModel):
+    body: constr(min_length=1, max_length=2000)
+    media: List["IncidentCommentMediaCreate"] = Field(default_factory=list)
+
+
+class IncidentCommentPublic(BaseModel):
+    id: int
+    body: str
+    created_at: datetime
+    user: UserSummary
+    attachments: List["IncidentCommentAttachmentPublic"] = Field(default_factory=list)
+    likes_count: int = 0
+    unlikes_count: int = 0
+    viewer_reaction: Optional[Literal["like", "unlike"]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentReactionUpdate(BaseModel):
+    action: Literal["like", "unlike", "clear"] = Field(
+        ...,
+        description="Set to like/unlike or clear to remove reaction",
+    )
+
+
+class IncidentReactionStatus(BaseModel):
+    likes_count: int
+    unlikes_count: int
+    viewer_reaction: Optional[Literal["like", "unlike"]] = None
+
+
+class IncidentCommentMediaBase(BaseModel):
+    media_type: Literal["image", "video"]
+    content_type: Optional[str] = None
+    data_base64: str = Field(..., description="Base64 encoded media payload")
+    filename: Optional[str] = Field(None, max_length=255)
+
+
+class IncidentCommentMediaCreate(IncidentCommentMediaBase):
+    pass
+
+
+class IncidentCommentAttachmentPublic(IncidentCommentMediaBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentCommentReactionUpdate(BaseModel):
+    action: Literal["like", "unlike", "clear"]
+
+
 class IncidentPublic(IncidentBase):
     id: int
     credibility_score: float
     follow_up_due_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    follow_ups: List[IncidentFollowUpPublic] = []
+    follow_ups: List[IncidentFollowUpPublic] = Field(default_factory=list)
+    comments: List[IncidentCommentPublic] = Field(default_factory=list)
+    likes_count: int = 0
+    unlikes_count: int = 0
+    viewer_reaction: Optional[Literal["like", "unlike"]] = None
 
     class Config:
         from_attributes = True
@@ -132,3 +231,7 @@ class TaxonomyResponse(BaseModel):
     police_related: TaxonomyGroup
     community_civic: TaxonomyGroup
     public_order: TaxonomyGroup
+
+
+IncidentCommentCreate.model_rebuild()
+IncidentCommentPublic.model_rebuild()

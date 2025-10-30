@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { fetchIncidents } from "../api.js";
 import IncidentCard from "./IncidentCard.jsx";
 
-export default function IncidentList({ incidentType, statusFilter, refreshToken, onMutated }) {
+export default function IncidentList({
+  incidentType,
+  statusFilter,
+  refreshToken,
+  onMutated,
+  onRequireAuth = () => {},
+}) {
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -59,7 +65,12 @@ export default function IncidentList({ incidentType, statusFilter, refreshToken,
       )}
 
       {incidents.map((incident) => (
-        <IncidentCard key={incident.id} incident={incident} onMutated={onMutated} />
+        <IncidentCard
+          key={incident.id}
+          incident={incident}
+          onMutated={onMutated}
+          onRequireAuth={onRequireAuth}
+        />
       ))}
     </div>
   );

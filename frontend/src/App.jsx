@@ -3,7 +3,9 @@ import IncidentForm from "./components/IncidentForm.jsx";
 import IncidentList from "./components/IncidentList.jsx";
 import StatsOverview from "./components/StatsOverview.jsx";
 import SentimentPulse from "./components/SentimentPulse.jsx";
+import AuthModal from "./components/AuthModal.jsx";
 import { fetchStats, fetchTaxonomy } from "./api.js";
+import { useAuth } from "./context/AuthContext.jsx";
 
 const TYPE_FILTERS = [
   { id: "all", label: "All Signals" },
@@ -21,6 +23,9 @@ const STATUS_FILTERS = [
 ];
 
 export default function App() {
+  const { authenticated, user, logout, initializing: authLoading } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState("login");
   const [taxonomy, setTaxonomy] = useState(null);
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
   const [taxonomyError, setTaxonomyError] = useState("");
@@ -31,6 +36,11 @@ export default function App() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [refreshToken, setRefreshToken] = useState(0);
+
+  const handleRequireAuth = (mode = "login") => {
+    setAuthModalMode(mode);
+    setAuthModalOpen(true);
+  };
 
   useEffect(() => {
     async function loadTaxonomy() {
@@ -90,15 +100,38 @@ export default function App() {
                 Blend police incidents and neighborhood insights to surface what residents feel, need, and celebrate.
               </p>
             </div>
-            <button
-              className="w-full rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white shadow-soft transition hover:bg-[#121420] xs:w-auto xs:self-start sm:self-auto"
-              onClick={() => {
-                refreshStats();
-                setRefreshToken((val) => val + 1);
-              }}
-            >
-              Refresh Signals
-            </button>
+            <div className="flex w-full flex-col gap-2 xs:w-auto">
+              <button
+                className="w-full rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white shadow-soft transition hover:bg-[#121420]"
+                onClick={() => {
+                  refreshStats();
+                  setRefreshToken((val) => val + 1);
+                }}
+              >
+                Refresh Signals
+              </button>
+              {authenticated ? (
+                <div className="flex items-center justify-between gap-2 rounded-full bg-white/60 px-3 py-1 text-[11px] text-slate-600 xs:justify-end">
+                  <span>{user.display_name}</span>
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-[11px] font-medium text-rose-500 transition hover:bg-rose-100/80"
+                    onClick={logout}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-ink"
+                  onClick={() => handleRequireAuth("login")}
+                  disabled={authLoading}
+                >
+                  {authLoading ? "Loading…" : "Sign in"}
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -179,10 +212,16 @@ export default function App() {
                 setRefreshToken((val) => val + 1);
                 refreshStats();
               }}
+              onRequireAuth={handleRequireAuth}
             />
           </section>
         </main>
       </div>
+      <AuthModal
+        open={authModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setAuthModalOpen(false)}
+      />
     </div>
   );
 }

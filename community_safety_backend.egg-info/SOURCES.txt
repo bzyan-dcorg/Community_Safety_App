@@ -6,6 +6,7 @@ backend/main.py
 backend/models.py
 backend/readmed.md
 backend/schemas.py
+backend/security.py
 community_safety_backend.egg-info/PKG-INFO
 community_safety_backend.egg-info/SOURCES.txt
 community_safety_backend.egg-info/dependency_links.txt

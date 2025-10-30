@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFollowUp, updateIncident } from "../api.js";
+import { createComment, createFollowUp, setCommentReaction, setIncidentReaction, updateIncident } from "../api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const STATUS_STYLES = {
   unverified: "bg-slate-200 text-slate-700",
@@ -35,6 +36,32 @@ const SENTIMENT_OPTIONS = [
   { id: "unsafe", label: "Unsafe" },
   { id: "unsure", label: "Unsure" },
 ];
+
+const MAX_COMMENT_MEDIA = 3;
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read file"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Invalid file result"));
+        return;
+      }
+      const [prefix, base64] = reader.result.split(",", 2);
+      const mediaType = file.type.startsWith("video") ? "video" : "image";
+      resolve({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        dataUrl: reader.result,
+        base64: base64 || reader.result,
+        filename: file.name,
+        contentType: file.type || (mediaType === "image" ? "image/*" : "video/*"),
+        mediaType,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function formatTimestamp(value) {
   if (!value) return "";
@@ -106,7 +133,8 @@ function PromptToggle({ label, value, onChange }) {
   );
 }
 
-export default function IncidentCard({ incident, onMutated }) {
+export default function IncidentCard({ incident, onMutated, onRequireAuth = () => {} }) {
+  const { authenticated, user } = useAuth();
   const [showComposer, setShowComposer] = useState(false);
   const [notes, setNotes] = useState("");
   const [followStatus, setFollowStatus] = useState(incident.status || "unverified");
@@ -120,6 +148,20 @@ export default function IncidentCard({ incident, onMutated }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [commentBody, setCommentBody] = useState("");
+  const [commentLoading, setCommentLoading] = useState(false);
+  const [commentError, setCommentError] = useState("");
+  const [commentSuccess, setCommentSuccess] = useState("");
+  const [comments, setComments] = useState(incident.comments || []);
+  const [commentMedia, setCommentMedia] = useState([]);
+  const [commentReactionUpdating, setCommentReactionUpdating] = useState(null);
+  const [reactionState, setReactionState] = useState({
+    likesCount: incident.likes_count || 0,
+    unlikesCount: incident.unlikes_count || 0,
+    viewerReaction: incident.viewer_reaction || null,
+  });
+  const [reactionLoading, setReactionLoading] = useState(false);
+  const [reactionError, setReactionError] = useState("");
 
   const credibilityPercent = useMemo(() => {
     if (typeof incident.credibility_score !== "number") return 0;
@@ -149,6 +191,146 @@ export default function IncidentCard({ incident, onMutated }) {
   useEffect(() => {
     setFollowSentiment(incident.safety_sentiment || "unsure");
   }, [incident.safety_sentiment]);
+
+  useEffect(() => {
+    setComments(incident.comments || []);
+  }, [incident.comments]);
+
+  useEffect(() => {
+    setReactionState({
+      likesCount: incident.likes_count || 0,
+      unlikesCount: incident.unlikes_count || 0,
+      viewerReaction: incident.viewer_reaction || null,
+    });
+  }, [incident.likes_count, incident.unlikes_count, incident.viewer_reaction]);
+
+  useEffect(() => {
+    if (commentBody || commentMedia.length > 0) {
+      setCommentError("");
+      setCommentSuccess("");
+    }
+  }, [commentBody, commentMedia]);
+
+  const canPostComment = commentBody.trim().length > 0;
+
+  async function handleCommentFilesChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+    if (commentMedia.length + files.length > MAX_COMMENT_MEDIA) {
+      setCommentError(`You can attach up to ${MAX_COMMENT_MEDIA} items per comment.`);
+      return;
+    }
+    try {
+      const processed = await Promise.all(
+        files.map((file) => {
+          if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+            throw new Error("Only images or videos are supported.");
+          }
+          return readFileAsDataURL(file);
+        }),
+      );
+      setCommentMedia((prev) => [...prev, ...processed]);
+    } catch (err) {
+      console.error(err);
+      setCommentError(err?.message || "Unable to read attachments.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  function handleRemoveCommentMedia(id) {
+    setCommentMedia((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  async function handleCommentSubmit(event) {
+    event.preventDefault();
+    if (!authenticated) {
+      onRequireAuth("login");
+      return;
+    }
+    const body = commentBody.trim();
+    if (!body) {
+      setCommentError("Comment cannot be empty.");
+      return;
+    }
+
+    setCommentLoading(true);
+    setCommentError("");
+    setCommentSuccess("");
+    try {
+      const mediaPayload = commentMedia.map((item) => ({
+        media_type: item.mediaType,
+        content_type: item.contentType,
+        data_base64: item.base64,
+        filename: item.filename,
+      }));
+      const created = await createComment(incident.id, {
+        body,
+        media: mediaPayload,
+      });
+      setCommentBody("");
+      setCommentMedia([]);
+      setComments((prev) => [created, ...prev]);
+      setCommentSuccess("Comment posted.");
+      if (onMutated) onMutated();
+    } catch (err) {
+      console.error(err);
+      const detail = err?.response?.data?.detail || "Unable to add comment.";
+      setCommentError(Array.isArray(detail) ? detail.join(", ") : detail);
+    } finally {
+      setCommentLoading(false);
+    }
+  }
+
+  async function handleReaction(action) {
+    if (!authenticated) {
+      onRequireAuth("login");
+      return;
+    }
+    const nextAction = reactionState.viewerReaction === action ? "clear" : action;
+    setReactionLoading(true);
+    setReactionError("");
+    try {
+      const result = await setIncidentReaction(incident.id, nextAction);
+      setReactionState({
+        likesCount: result.likes_count,
+        unlikesCount: result.unlikes_count,
+        viewerReaction: result.viewer_reaction,
+      });
+      if (onMutated) onMutated();
+    } catch (err) {
+      console.error(err);
+      const detail = err?.response?.data?.detail || "Unable to update reaction.";
+      setReactionError(Array.isArray(detail) ? detail.join(", ") : detail);
+    } finally {
+      setReactionLoading(false);
+    }
+  }
+
+  async function handleCommentReaction(commentId, action) {
+    if (!authenticated) {
+      onRequireAuth("login");
+      return;
+    }
+    setCommentError("");
+    setCommentReactionUpdating(commentId);
+    try {
+      const target = comments.find((item) => item.id === commentId);
+      const currentReaction = target?.viewer_reaction || null;
+      const nextAction = currentReaction === action ? "clear" : action;
+      const updated = await setCommentReaction(incident.id, commentId, nextAction);
+      setComments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (onMutated) onMutated();
+    } catch (err) {
+      console.error(err);
+      const detail = err?.response?.data?.detail || "Unable to update comment reaction.";
+      setCommentError(Array.isArray(detail) ? detail.join(", ") : detail);
+    } finally {
+      setCommentReactionUpdating(null);
+    }
+  }
 
   async function handleMarkResolved() {
     setActionLoading(true);
@@ -263,6 +445,39 @@ export default function IncidentCard({ incident, onMutated }) {
             >
               {actionLoading ? "Updating…" : "Mark resolved"}
             </button>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleReaction("like")}
+                disabled={reactionLoading}
+                className={`flex items-center gap-1 rounded-full px-3 py-2 text-[11px] font-medium transition ${
+                  reactionState.viewerReaction === "like"
+                    ? "bg-emerald-500 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>Like</span>
+                <span className="font-semibold">{reactionState.likesCount}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReaction("unlike")}
+                disabled={reactionLoading}
+                className={`flex items-center gap-1 rounded-full px-3 py-2 text-[11px] font-medium transition ${
+                  reactionState.viewerReaction === "unlike"
+                    ? "bg-rose-500 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>Unlike</span>
+                <span className="font-semibold">{reactionState.unlikesCount}</span>
+              </button>
+            </div>
+            {reactionError && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-600">
+                {reactionError}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -340,6 +555,184 @@ export default function IncidentCard({ incident, onMutated }) {
           </ul>
         </div>
       )}
+
+      <div className="mt-6 rounded-3xl border border-slate-200 bg-white/80 p-4 xs:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-ink xs:text-base">Neighborhood chat</h4>
+          {comments.length > 0 && (
+            <span className="text-[11px] text-slate-500">
+              {comments.length} {comments.length === 1 ? "reply" : "replies"}
+            </span>
+          )}
+        </div>
+
+        {authenticated ? (
+          <form onSubmit={handleCommentSubmit} className="mt-4 space-y-3">
+            <textarea
+              value={commentBody}
+              onChange={(event) => setCommentBody(event.target.value)}
+              rows={3}
+              disabled={commentLoading}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-inner focus:border-ink focus:outline-none disabled:opacity-50"
+              placeholder="Share what you're seeing or how neighbors can help."
+            />
+            <div className="space-y-2">
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                onChange={handleCommentFilesChange}
+                className="w-full cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-3 text-[11px] text-slate-500 transition hover:border-slate-400 focus:outline-none disabled:opacity-50"
+                disabled={commentLoading}
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Images or short clips. Max {MAX_COMMENT_MEDIA} attachments.</span>
+                <span>
+                  {commentMedia.length}/{MAX_COMMENT_MEDIA}
+                </span>
+              </div>
+              {commentMedia.length > 0 && (
+                <div className="grid gap-3 xs:grid-cols-2">
+                  {commentMedia.map((item) => (
+                    <div
+                      key={item.id}
+                      className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white/70 p-2"
+                    >
+                      {item.mediaType === "image" ? (
+                        <img
+                          src={item.dataUrl}
+                          alt={item.filename}
+                          className="h-32 w-full rounded-xl object-cover"
+                        />
+                      ) : (
+                        <video
+                          src={item.dataUrl}
+                          controls
+                          className="h-32 w-full rounded-xl bg-black object-cover"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCommentMedia(item.id)}
+                        className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                      >
+                        Remove
+                      </button>
+                      <p className="mt-2 truncate text-[10px] text-slate-500">{item.filename}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 xs:flex-row xs:items-center xs:justify-between">
+              <span className="text-[11px] text-slate-500">
+                Posting as {user?.display_name || user?.email || "you"}
+              </span>
+              <button
+                type="submit"
+                disabled={!canPostComment || commentLoading}
+                className="rounded-full bg-ink px-4 py-2 text-[11px] font-semibold text-white shadow-soft transition hover:bg-[#121420] disabled:opacity-50"
+              >
+                {commentLoading ? "Posting…" : "Post comment"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onRequireAuth("login")}
+            className="mt-4 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
+          >
+            Sign in to share your perspective
+          </button>
+        )}
+
+        {commentError && (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-600">
+            {commentError}
+          </div>
+        )}
+        {commentSuccess && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-600">
+            {commentSuccess}
+          </div>
+        )}
+
+        <div className="mt-4 space-y-3">
+          {comments.length > 0 ? (
+            comments.map((comment) => (
+              <div
+                key={comment.id}
+                className="rounded-2xl border border-white/60 bg-slate-50/80 px-4 py-3 text-sm text-slate-600 shadow-inner"
+              >
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>{comment.user?.display_name || "Neighbor"}</span>
+                  <span>{formatTimestamp(comment.created_at)}</span>
+                </div>
+                <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{comment.body}</p>
+                {comment.attachments?.length > 0 && (
+                  <div className="mt-3 grid gap-3 xs:grid-cols-2">
+                    {comment.attachments.map((attachment) => {
+                      const contentType =
+                        attachment.content_type || (attachment.media_type === "video" ? "video/mp4" : "image/png");
+                      const src = `data:${contentType};base64,${attachment.data_base64}`;
+                      return (
+                        <div
+                          key={attachment.id}
+                          className="overflow-hidden rounded-2xl border border-slate-200 bg-white/70 p-2"
+                        >
+                          {attachment.media_type === "image" ? (
+                            <img
+                              src={src}
+                              alt={attachment.filename || "comment media"}
+                              className="h-32 w-full rounded-xl object-cover"
+                            />
+                          ) : (
+                            <video src={src} controls className="h-32 w-full rounded-xl bg-black object-cover" />
+                          )}
+                          {attachment.filename && (
+                            <p className="mt-2 truncate text-[10px] text-slate-500">{attachment.filename}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                  <button
+                    type="button"
+                    onClick={() => handleCommentReaction(comment.id, "like")}
+                    disabled={commentReactionUpdating === comment.id}
+                    className={`flex items-center gap-1 rounded-full px-3 py-1 font-medium transition ${
+                      comment.viewer_reaction === "like"
+                        ? "bg-emerald-500 text-white"
+                        : "bg-white text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>Like</span>
+                    <span className="font-semibold">{comment.likes_count || 0}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCommentReaction(comment.id, "unlike")}
+                    disabled={commentReactionUpdating === comment.id}
+                    className={`flex items-center gap-1 rounded-full px-3 py-1 font-medium transition ${
+                      comment.viewer_reaction === "unlike"
+                        ? "bg-rose-500 text-white"
+                        : "bg-white text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>Unlike</span>
+                    <span className="font-semibold">{comment.unlikes_count || 0}</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs text-slate-500">No comments yet. Start the conversation.</p>
+          )}
+        </div>
+      </div>
     </article>
   );
 }

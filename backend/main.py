@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import Base, engine
-from .routers import incidents, taxonomy
+from .routers import auth, incidents, taxonomy
 
 # create tables on startup (for dev)
 Base.metadata.create_all(bind=engine)
@@ -25,6 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(incidents.router)
 app.include_router(taxonomy.router)
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..db import get_db
+from ..security import get_current_user, optional_current_user
 
 router = APIRouter(
     prefix="/incidents",
@@ -16,6 +17,7 @@ router = APIRouter(
 FOLLOW_UP_INITIAL_MINUTES = 30
 FOLLOW_UP_EXTENDED_MINUTES = 120
 RESOLVED_STATUSES = {"official-confirmed", "resolved"}
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def _model_dump(payload):
@@ -42,6 +44,94 @@ def _calculate_credibility(payload: schemas.IncidentCreate) -> float:
     return max(0.2, min(0.95, score))
 
 
+def _populate_interaction_metadata(incident: models.Incident, current_user: Optional[models.User]) -> None:
+    likes = 0
+    unlikes = 0
+    viewer = None
+    for reaction in incident.reactions:
+        if reaction.value == "like":
+            likes += 1
+        elif reaction.value == "unlike":
+            unlikes += 1
+        if current_user and reaction.user_id == current_user.id:
+            viewer = reaction.value
+
+    incident.likes_count = likes
+    incident.unlikes_count = unlikes
+    incident.viewer_reaction = viewer
+
+    try:
+        incident.comments.sort(key=lambda item: item.created_at or EPOCH, reverse=True)
+    except AttributeError:
+        sorted_comments = sorted(incident.comments, key=lambda item: item.created_at or EPOCH, reverse=True)
+        incident.comments = sorted_comments  # type: ignore[assignment]
+
+    for comment in incident.comments:
+        _populate_comment_metadata(comment, current_user)
+
+
+def _populate_comment_metadata(comment: models.IncidentComment, current_user: Optional[models.User]) -> None:
+    likes = 0
+    unlikes = 0
+    viewer = None
+    for reaction in comment.reactions:
+        if reaction.value == "like":
+            likes += 1
+        elif reaction.value == "unlike":
+            unlikes += 1
+        if current_user and reaction.user_id == current_user.id:
+            viewer = reaction.value
+
+    comment.likes_count = likes
+    comment.unlikes_count = unlikes
+    comment.viewer_reaction = viewer
+
+
+def _reaction_status(db: Session, incident_id: int, current_user: Optional[models.User]) -> schemas.IncidentReactionStatus:
+    rows = (
+        db.query(models.IncidentReaction.value, func.count(models.IncidentReaction.id))
+        .filter(models.IncidentReaction.incident_id == incident_id)
+        .group_by(models.IncidentReaction.value)
+        .all()
+    )
+    counts = {value: count for value, count in rows}
+    viewer = None
+    if current_user:
+        record = (
+            db.query(models.IncidentReaction)
+            .filter(
+                models.IncidentReaction.incident_id == incident_id,
+                models.IncidentReaction.user_id == current_user.id,
+            )
+            .first()
+        )
+        if record:
+            viewer = record.value
+
+    return schemas.IncidentReactionStatus(
+        likes_count=counts.get("like", 0),
+        unlikes_count=counts.get("unlike", 0),
+        viewer_reaction=viewer,
+    )
+
+
+def _reload_comment(db: Session, comment_id: int, current_user: Optional[models.User]) -> models.IncidentComment:
+    comment = (
+        db.query(models.IncidentComment)
+        .options(
+            selectinload(models.IncidentComment.user),
+            selectinload(models.IncidentComment.attachments),
+            selectinload(models.IncidentComment.reactions),
+        )
+        .filter(models.IncidentComment.id == comment_id)
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    _populate_comment_metadata(comment, current_user)
+    return comment
+
+
 @router.get("/", response_model=List[schemas.IncidentPublic])
 def list_incidents(
     db: Session = Depends(get_db),
@@ -50,12 +140,21 @@ def list_incidents(
     category_filter: Optional[str] = Query(None, description="Filter by taxonomy category"),
     incident_type: Optional[str] = Query(None, description="Filter by incident type"),
     needs_follow_up: bool = Query(False, description="Only incidents with follow-ups due"),
+    current_user: Optional[models.User] = Depends(optional_current_user),
 ):
     """Return recent incidents, including follow-up timeline and optional filters."""
 
     q = (
         db.query(models.Incident)
-        .options(selectinload(models.Incident.follow_ups))
+        .options(
+            selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.comments).options(
+                selectinload(models.IncidentComment.user),
+                selectinload(models.IncidentComment.attachments),
+                selectinload(models.IncidentComment.reactions),
+            ),
+            selectinload(models.Incident.reactions),
+        )
         .order_by(models.Incident.created_at.desc())
     )
 
@@ -72,7 +171,11 @@ def list_incidents(
             ~models.Incident.status.in_(tuple(RESOLVED_STATUSES)),
         )
 
-    return q.limit(limit).all()
+    incidents = q.limit(limit).all()
+    for incident in incidents:
+        _populate_interaction_metadata(incident, current_user)
+
+    return incidents
 
 
 @router.get("/stats", response_model=schemas.IncidentStats)
@@ -136,15 +239,28 @@ def incident_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/{incident_id}", response_model=schemas.IncidentPublic)
-def get_incident(incident_id: int, db: Session = Depends(get_db)):
+def get_incident(
+    incident_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(optional_current_user),
+):
     incident = (
         db.query(models.Incident)
-        .options(selectinload(models.Incident.follow_ups))
+        .options(
+            selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.comments).options(
+                selectinload(models.IncidentComment.user),
+                selectinload(models.IncidentComment.attachments),
+                selectinload(models.IncidentComment.reactions),
+            ),
+            selectinload(models.Incident.reactions),
+        )
         .filter(models.Incident.id == incident_id)
         .first()
     )
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+    _populate_interaction_metadata(incident, current_user)
     return incident
 
 
@@ -266,3 +382,145 @@ def create_follow_up(
     db.commit()
     db.refresh(follow_up)
     return follow_up
+
+
+@router.post(
+    "/{incident_id}/comments",
+    response_model=schemas.IncidentCommentPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_comment(
+    incident_id: int,
+    payload: schemas.IncidentCommentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    comment = models.IncidentComment(
+        incident=incident,
+        user=current_user,
+        body=body,
+    )
+    db.add(comment)
+    db.flush()
+
+    for media in payload.media:
+        data = (media.data_base64 or "").strip()
+        if not data:
+            continue
+        media_type = media.media_type
+        if media_type not in {"image", "video"}:
+            continue
+        attachment = models.IncidentCommentAttachment(
+            comment_id=comment.id,
+            media_type=media_type,
+            content_type=(media.content_type or "").strip() or None,
+            data_base64=data,
+            filename=(media.filename or "").strip() or None,
+        )
+        db.add(attachment)
+
+    db.commit()
+
+    return _reload_comment(db, comment.id, current_user)
+
+
+@router.post(
+    "/{incident_id}/reactions",
+    response_model=schemas.IncidentReactionStatus,
+)
+def set_incident_reaction(
+    incident_id: int,
+    payload: schemas.IncidentReactionUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    incident_exists = db.query(models.Incident.id).filter(models.Incident.id == incident_id).first()
+    if not incident_exists:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    reaction = (
+        db.query(models.IncidentReaction)
+        .filter(
+            models.IncidentReaction.incident_id == incident_id,
+            models.IncidentReaction.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if payload.action == "clear":
+        if reaction:
+            db.delete(reaction)
+            db.commit()
+        return _reaction_status(db, incident_id, current_user)
+
+    if reaction:
+        reaction.value = payload.action
+    else:
+        reaction = models.IncidentReaction(
+            incident_id=incident_id,
+            user_id=current_user.id,
+            value=payload.action,
+        )
+        db.add(reaction)
+
+    db.commit()
+    return _reaction_status(db, incident_id, current_user)
+
+
+@router.post(
+    "/{incident_id}/comments/{comment_id}/reactions",
+    response_model=schemas.IncidentCommentPublic,
+)
+def set_comment_reaction(
+    incident_id: int,
+    comment_id: int,
+    payload: schemas.IncidentCommentReactionUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    comment = (
+        db.query(models.IncidentComment)
+        .filter(
+            models.IncidentComment.id == comment_id,
+            models.IncidentComment.incident_id == incident_id,
+        )
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    reaction = (
+        db.query(models.IncidentCommentReaction)
+        .filter(
+            models.IncidentCommentReaction.comment_id == comment_id,
+            models.IncidentCommentReaction.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if payload.action == "clear":
+        if reaction:
+            db.delete(reaction)
+            db.commit()
+        return _reload_comment(db, comment_id, current_user)
+
+    if reaction:
+        reaction.value = payload.action
+    else:
+        reaction = models.IncidentCommentReaction(
+            comment_id=comment_id,
+            user_id=current_user.id,
+            value=payload.action,
+        )
+        db.add(reaction)
+
+    db.commit()
+    return _reload_comment(db, comment_id, current_user)
