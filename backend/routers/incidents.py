@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..db import get_db
 from ..security import get_current_user, optional_current_user
+from ..services.rewards import reward_target_for_status
 
 router = APIRouter(
     prefix="/incidents",
@@ -18,6 +19,7 @@ FOLLOW_UP_INITIAL_MINUTES = 30
 FOLLOW_UP_EXTENDED_MINUTES = 120
 RESOLVED_STATUSES = {"official-confirmed", "resolved"}
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+VERIFIER_ROLES = {"admin", "reporter", "officer"}
 
 
 def _model_dump(payload):
@@ -42,6 +44,63 @@ def _calculate_credibility(payload: schemas.IncidentCreate) -> float:
     if payload.contacted_authorities and payload.contacted_authorities not in {"unknown", "none"}:
         score += 0.12
     return max(0.2, min(0.95, score))
+
+
+def _notify_verifiers(db: Session, incident: models.Incident, reporter: Optional[models.User]) -> None:
+    if not reporter or reporter.role in VERIFIER_ROLES:
+        return
+    if incident.verification_alert_sent:
+        return
+
+    recipients = (
+        db.query(models.User)
+        .filter(models.User.role.in_(tuple(VERIFIER_ROLES)))
+        .all()
+    )
+    if not recipients:
+        return
+
+    location_hint = f" near {incident.location_text}" if incident.location_text else ""
+    for recipient in recipients:
+        message = (
+            f"Incident #{incident.id} from {reporter.display_name or reporter.email}"
+            f"{location_hint} needs verification."
+        )
+        db.add(
+            models.Notification(
+                recipient_id=recipient.id,
+                incident_id=incident.id,
+                message=message,
+                category="verification",
+            )
+        )
+
+    incident.verification_alert_sent = True
+
+
+def _apply_reward_progress(db: Session, incident: models.Incident) -> None:
+    if not incident.reporter_user_id:
+        return
+
+    target_points = reward_target_for_status(incident.status, incident.credibility_score)
+    already_awarded = incident.reward_points_awarded or 0
+    if target_points <= already_awarded:
+        return
+
+    reporter = incident.reporter
+    if not reporter:
+        reporter = (
+            db.query(models.User)
+            .filter(models.User.id == incident.reporter_user_id)
+            .first()
+        )
+        if not reporter:
+            return
+        incident.reporter = reporter
+
+    reporter.reward_points = (reporter.reward_points or 0) + (target_points - already_awarded)
+    incident.reward_points_awarded = target_points
+    db.add(reporter)
 
 
 def _populate_interaction_metadata(incident: models.Incident, current_user: Optional[models.User]) -> None:
@@ -147,6 +206,7 @@ def list_incidents(
     q = (
         db.query(models.Incident)
         .options(
+            selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
@@ -247,6 +307,7 @@ def get_incident(
     incident = (
         db.query(models.Incident)
         .options(
+            selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
@@ -268,6 +329,7 @@ def get_incident(
 def create_incident(
     payload: schemas.IncidentCreate,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Create a new community incident report (unverified by default)."""
 
@@ -281,6 +343,9 @@ def create_incident(
     if payload.still_happening is False:
         follow_up_due_at = None
     credibility_score = _calculate_credibility(payload)
+    alias = (payload.reporter_alias or "").strip()
+    if not alias:
+        alias = (current_user.display_name or "") or current_user.email.split("@")[0]
 
     row = models.Incident(
         category=payload.category.strip(),
@@ -295,11 +360,15 @@ def create_incident(
         contacted_authorities=payload.contacted_authorities or "unknown",
         safety_sentiment=payload.safety_sentiment,
         status=payload.status or "unverified",
-        reporter_alias=(payload.reporter_alias or "").strip() or None,
+        reporter_alias=alias or None,
         follow_up_due_at=follow_up_due_at,
         credibility_score=credibility_score,
+        reporter_user_id=current_user.id,
     )
     db.add(row)
+    db.flush()
+    row.reporter = current_user
+    _notify_verifiers(db, row, current_user)
     db.commit()
     db.refresh(row)
     return row
@@ -328,6 +397,7 @@ def update_incident(
         setattr(incident, field, value)
 
     incident.updated_at = _now_utc()
+    _apply_reward_progress(db, incident)
     db.add(incident)
     db.commit()
     db.refresh(incident)
@@ -377,7 +447,7 @@ def create_follow_up(
         incident.follow_up_due_at = None
 
     incident.updated_at = _now_utc()
-
+    _apply_reward_progress(db, incident)
     db.add(incident)
     db.commit()
     db.refresh(follow_up)

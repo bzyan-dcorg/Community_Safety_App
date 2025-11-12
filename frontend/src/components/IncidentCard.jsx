@@ -171,6 +171,8 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
   const followUps = incident.follow_ups || [];
   const followUpDue = incident.follow_up_due_at ? new Date(incident.follow_up_due_at) : null;
   const followUpOverdue = followUpDue ? followUpDue.getTime() <= Date.now() : false;
+  const reporterName = incident.reporter_alias || incident.reporter?.display_name || "Community member";
+  const rewardPointsEarned = incident.reward_points_awarded || 0;
 
   useEffect(() => {
     setFollowStatus(incident.status || "unverified");
@@ -408,7 +410,14 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 xs:gap-3">
             <span className="whitespace-nowrap">{formatTimestamp(incident.created_at)}</span>
             {incident.location_text && <span>📍 {incident.location_text}</span>}
-            <span>Reporter: {incident.reporter_alias || "Community member"}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <span className="font-medium text-ink">Reported by {reporterName}</span>
+            {rewardPointsEarned > 0 && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                {rewardPointsEarned} pts earned
+              </span>
+            )}
           </div>
         </div>
 

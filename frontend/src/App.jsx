@@ -4,6 +4,8 @@ import IncidentList from "./components/IncidentList.jsx";
 import StatsOverview from "./components/StatsOverview.jsx";
 import SentimentPulse from "./components/SentimentPulse.jsx";
 import AuthModal from "./components/AuthModal.jsx";
+import NotificationBell from "./components/NotificationBell.jsx";
+import UserDashboardModal from "./components/UserDashboardModal.jsx";
 import { fetchStats, fetchTaxonomy } from "./api.js";
 import { useAuth } from "./context/AuthContext.jsx";
 
@@ -26,6 +28,7 @@ export default function App() {
   const { authenticated, user, logout, initializing: authLoading } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState("login");
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [taxonomy, setTaxonomy] = useState(null);
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
   const [taxonomyError, setTaxonomyError] = useState("");
@@ -111,15 +114,38 @@ export default function App() {
                 Refresh Signals
               </button>
               {authenticated ? (
-                <div className="flex items-center justify-between gap-2 rounded-full bg-white/60 px-3 py-1 text-[11px] text-slate-600 xs:justify-end">
-                  <span>{user.display_name}</span>
-                  <button
-                    type="button"
-                    className="rounded-full px-2 py-1 text-[11px] font-medium text-rose-500 transition hover:bg-rose-100/80"
-                    onClick={logout}
-                  >
-                    Sign out
-                  </button>
+                <div className="flex flex-col gap-2 rounded-2xl bg-white/70 p-2 text-[11px] text-slate-600 shadow-inner sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2 text-ink">
+                    <span className="text-sm font-semibold">
+                      {user?.display_name || "Neighbor"}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                      {user?.membership_tier || "Member"}
+                    </span>
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">
+                      {(user?.reward_points ?? 0).toLocaleString()} pts
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <NotificationBell />
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
+                      onClick={() => setDashboardOpen(true)}
+                    >
+                      My rewards
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full px-3 py-1 text-[11px] font-medium text-rose-500 transition hover:bg-rose-100/80"
+                      onClick={() => {
+                        setDashboardOpen(false);
+                        logout();
+                      }}
+                    >
+                      Sign out
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
@@ -155,6 +181,7 @@ export default function App() {
                   setRefreshToken((value) => value + 1);
                   refreshStats();
                 }}
+                onRequireAuth={handleRequireAuth}
               />
             </div>
           </section>
@@ -217,6 +244,7 @@ export default function App() {
           </section>
         </main>
       </div>
+      <UserDashboardModal open={dashboardOpen} onClose={() => setDashboardOpen(false)} />
       <AuthModal
         open={authModalOpen}
         initialMode={authModalMode}

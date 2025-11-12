@@ -112,6 +112,9 @@ class UserSummary(BaseModel):
 class UserProfile(UserSummary):
     email: EmailStr
     auth_provider: str
+    role: str
+    reward_points: int
+    membership_tier: str
 
     class Config:
         from_attributes = True
@@ -121,6 +124,18 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserProfile
+
+
+class NotificationPublic(BaseModel):
+    id: int
+    message: str
+    status: Literal["unread", "read"]
+    category: str
+    incident_id: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class AuthEmailRegister(BaseModel):
@@ -207,6 +222,8 @@ class IncidentPublic(IncidentBase):
     likes_count: int = 0
     unlikes_count: int = 0
     viewer_reaction: Optional[Literal["like", "unlike"]] = None
+    reporter: Optional[UserSummary] = None
+    reward_points_awarded: int = 0
 
     class Config:
         from_attributes = True
@@ -231,6 +248,36 @@ class TaxonomyResponse(BaseModel):
     police_related: TaxonomyGroup
     community_civic: TaxonomyGroup
     public_order: TaxonomyGroup
+
+
+class UserPostBrief(BaseModel):
+    id: int
+    category: str
+    description: str
+    status: str
+    created_at: datetime
+    likes_count: int
+    reward_points_awarded: int
+
+    class Config:
+        from_attributes = True
+
+
+class UserRewardSummary(BaseModel):
+    total_posts: int
+    confirmed_posts: int
+    total_likes: int
+    points: int
+    membership_tier: str
+    next_tier: Optional[str] = None
+    points_to_next: Optional[int] = None
+
+
+class UserOverview(BaseModel):
+    profile: UserProfile
+    rewards: UserRewardSummary
+    recent_posts: List[UserPostBrief]
+    unread_notifications: int = 0
 
 
 IncidentCommentCreate.model_rebuild()

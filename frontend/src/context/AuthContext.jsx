@@ -105,6 +105,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     setAuthToken(null);
     persistToken(null);
+    setInitializing(false);
   };
 
   const refreshProfile = async () => {
@@ -122,7 +123,7 @@ export function AuthProvider({ children }) {
       user,
       token,
       initializing,
-      authenticated: Boolean(user),
+      authenticated: Boolean(token),
       register: handleRegister,
       login: handleLogin,
       loginWithProvider: handleProviderLogin,

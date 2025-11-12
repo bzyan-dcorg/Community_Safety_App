@@ -92,6 +92,12 @@ Media access to de-identified trend summaries (with terms/consents).
 False-positive/merged-away rate < 10%.
 
 
+### New in this iteration
+- Residents must sign in before posting incidents so reports can be attributed and rewarded. The frontend now nudges unauthenticated users to open the auth modal from the form itself.
+- Reporter identities persist with each incident. Admins, reporters, and officers receive verification notifications the moment a new resident signal is filed.
+- Reward points accumulate automatically once an incident is confirmed or resolved (with a credibility bonus), unlocking tiered memberships: Neighbor Scout → Signal Verified → Community Sentinel → Civic Guardian.
+- A new “My rewards” dashboard summarizes total posts, confirmations, likes, unread verifier alerts, and the most recent incidents authored by the current user.
+
 
 ### Developer
 

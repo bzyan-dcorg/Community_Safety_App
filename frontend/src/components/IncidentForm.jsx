@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { createIncident } from "../api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const DEFAULT_TAXONOMY = {
   community_civic: {
@@ -100,7 +101,14 @@ function normalizePrompt(choice) {
   return null;
 }
 
-export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError, onCreated }) {
+export default function IncidentForm({
+  taxonomy,
+  taxonomyLoading,
+  taxonomyError,
+  onCreated,
+  onRequireAuth = () => {},
+}) {
+  const { authenticated, user } = useAuth();
   const [category, setCategory] = useState("Package Theft");
   const [incidentType, setIncidentType] = useState("community");
   const [description, setDescription] = useState("");
@@ -130,13 +138,20 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
     (value) => value !== "unset"
   ).length;
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!authenticated) {
+      setErr("Please sign in to submit incidents.");
+      onRequireAuth("login");
+      return;
+    }
+
     setSubmitting(true);
     setErr("");
     setSuccess(false);
 
     try {
+      const aliasValue = (alias || "").trim() || user?.display_name || undefined;
       const payload = {
         category,
         incident_type: incidentType,
@@ -147,7 +162,7 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
         feel_safe_now: normalizePrompt(feelSafeChoice),
         contacted_authorities: contactedAuthorities,
         safety_sentiment: safetySentiment,
-        reporter_alias: alias,
+        reporter_alias: aliasValue,
         status: "unverified",
       };
 
@@ -166,10 +181,30 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
       if (onCreated) onCreated();
     } catch (error) {
       console.error(error);
-      setErr("Failed to submit report. Please try again.");
+      const detail = error?.response?.data?.detail || "Failed to submit report. Please try again.";
+      setErr(Array.isArray(detail) ? detail.join(", ") : detail);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (!authenticated) {
+    return (
+      <section className="rounded-3xl border border-dashed border-slate-200 bg-white/70 p-6 text-sm text-slate-600 shadow-inner">
+        <h2 className="text-lg font-semibold text-ink">Sign in to share a community signal</h2>
+        <p className="mt-2">
+          Every confirmed, high-signal report earns reward points that unlock neighborhood membership perks and future
+          discounts. Create an account to start building your reputation.
+        </p>
+        <button
+          type="button"
+          className="mt-4 w-full rounded-2xl bg-ink px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:bg-[#111522]"
+          onClick={() => onRequireAuth("login")}
+        >
+          Sign in to report
+        </button>
+      </section>
+    );
   }
 
   return (
@@ -192,7 +227,7 @@ export default function IncidentForm({ taxonomy, taxonomyLoading, taxonomyError,
 
       {success && (
         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-600">
-          Thank you! Stay tuned for follow-up prompts.
+          Thank you! We&apos;ll nudge verifiers right away and credit your reward points once this signal is confirmed.
         </div>
       )}
 

@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import Base, engine
-from .routers import auth, incidents, taxonomy
+from .db import Base, engine, ensure_sqlite_schema
+from .routers import auth, incidents, notifications, taxonomy, users
 
 # create tables on startup (for dev)
 Base.metadata.create_all(bind=engine)
+ensure_sqlite_schema()
 
 app = FastAPI(
     title="Community Safety API",
@@ -26,8 +27,10 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(incidents.router)
 app.include_router(taxonomy.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")

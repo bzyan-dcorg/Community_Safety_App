@@ -3,6 +3,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
 from .db import Base
+from .services.rewards import determine_membership_tier
 
 
 class Incident(Base):
@@ -37,6 +38,9 @@ class Incident(Base):
     credibility_score = Column(Float, default=0.4)
     reporter_alias = Column(String(50), nullable=True)
     follow_up_due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    reporter_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    reward_points_awarded = Column(Integer, nullable=False, default=0)
+    verification_alert_sent = Column(Boolean, nullable=False, default=False)
 
     # timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -58,6 +62,11 @@ class Incident(Base):
         "IncidentReaction",
         back_populates="incident",
         cascade="all, delete-orphan",
+    )
+    reporter = relationship(
+        "User",
+        back_populates="reported_incidents",
+        foreign_keys="Incident.reporter_user_id",
     )
 
 
@@ -87,12 +96,29 @@ class User(Base):
     display_name = Column(String(100), nullable=True)
     auth_provider = Column(String(50), nullable=False, default="password")
     provider_subject = Column(String(255), nullable=True)
+    role = Column(String(25), nullable=False, default="resident", index=True)
+    reward_points = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     comments = relationship("IncidentComment", back_populates="user")
     reactions = relationship("IncidentReaction", back_populates="user")
     comment_reactions = relationship("IncidentCommentReaction", back_populates="user")
+    reported_incidents = relationship(
+        "Incident",
+        back_populates="reporter",
+        foreign_keys="Incident.reporter_user_id",
+    )
+    notifications = relationship(
+        "Notification",
+        back_populates="recipient",
+        cascade="all, delete-orphan",
+        order_by="Notification.created_at",
+    )
+
+    @property
+    def membership_tier(self) -> str:
+        return determine_membership_tier(self.reward_points)
 
 
 class IncidentComment(Base):
@@ -162,3 +188,19 @@ class IncidentCommentReaction(Base):
 
     comment = relationship("IncidentComment", back_populates="reactions")
     user = relationship("User", back_populates="comment_reactions")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True, index=True)
+    message = Column(String(500), nullable=False)
+    category = Column(String(50), nullable=False, default="verification")
+    status = Column(String(20), nullable=False, default="unread")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    recipient = relationship("User", back_populates="notifications")
+    incident = relationship("Incident")

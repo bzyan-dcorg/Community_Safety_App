@@ -129,3 +129,18 @@ export async function setCommentReaction(incidentId, commentId, action) {
   });
   return resp.data;
 }
+
+export async function fetchNotifications(params = {}) {
+  const resp = await apiClient.get("/notifications/", { params });
+  return resp.data;
+}
+
+export async function markNotificationRead(id) {
+  const resp = await apiClient.post(`/notifications/${id}/read`);
+  return resp.data;
+}
+
+export async function fetchUserOverview() {
+  const resp = await apiClient.get("/users/me/overview");
+  return resp.data;
+}
