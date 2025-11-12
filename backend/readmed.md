@@ -19,3 +19,18 @@ uvicorn backend.main:app --reload
 3. Reviewers (admin/officer) can call:
    - `GET /role-requests/?status_filter=pending` to retrieve the queue.
    - `POST /role-requests/{id}/decision` with `{"action":"approve"|"deny","notes":"..."}` (plus optional `role`) to approve or deny. Approved requests automatically elevate the user role.
+
+## Database maintenance
+
+- Existing SQLite files from older commits might miss the latest columns. Run `python -m backend.scripts.upgrade_sqlite` anytime you pull new migrations to apply the lightweight `ALTER TABLE` patches in-place.
+- To start fresh, delete `community.db` (from the repository root) before launching `uvicorn`; the ORM will re-create the tables automatically.
+
+## Sample data
+
+Need quick demo data for the dashboards or Expo screen? Seed a demo user and three incidents:
+
+```bash
+python -m backend.scripts.seed_sample_data
+```
+
+The script is idempotent—it skips rows that already exist.

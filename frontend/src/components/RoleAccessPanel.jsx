@@ -47,9 +47,6 @@ export default function RoleAccessPanel({ onAuthRequest, authLoading }) {
             Residents, staff, journalists, and officers can all register with tailored access and alerts.
           </p>
         </div>
-        <p className="text-xs text-slate-400">
-          Roles can be selected during registration or the first time you use social sign-in.
-        </p>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-4">

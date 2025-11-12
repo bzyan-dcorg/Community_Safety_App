@@ -16,6 +16,14 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+   If you need the app to reach the FastAPI backend, start Expo with the API base URL environment variable (replace the IP with the host that exposes port 8000 to your device):
+
+   ```bash
+   EXPO_PUBLIC_API_BASE_URL=http://192.168.0.42:8000 npx expo start
+   ```
+
+   When running in the iOS/Android simulators you can keep using `127.0.0.1`.
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)

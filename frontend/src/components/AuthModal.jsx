@@ -394,19 +394,27 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 px-4 py-8 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between">
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-black/30 px-4 py-8 backdrop-blur-sm">
+      <div className="relative mx-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
+        <button
+          type="button"
+          className="absolute right-4 top-4 rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path
+              fillRule="evenodd"
+              d="M5.22 4.22a.75.75 0 0 0-1.06 1.06L8.94 10l-4.78 4.72a.75.75 0 1 0 1.06 1.06L10 11.06l4.72 4.72a.75.75 0 1 0 1.06-1.06L11.06 10l4.72-4.72a.75.75 0 1 0-1.06-1.06L10 8.94z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+
+        <div className="pr-8">
           <h3 className="text-lg font-semibold text-ink">
             {mode === "login" ? "Welcome back" : "Join the neighborhood"}
           </h3>
-          <button
-            type="button"
-            className="rounded-full px-3 py-1 text-xs text-slate-500 transition hover:bg-slate-100"
-            onClick={onClose}
-          >
-            Close
-          </button>
         </div>
 
         <div className="mt-4 flex gap-2 rounded-full bg-slate-100 p-1 text-sm">
@@ -426,6 +434,9 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
 
         <div className="mt-5">
           <p className="text-xs font-medium text-slate-500">I&apos;m signing in as</p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Roles can be selected during registration or the first time you use social sign-in.
+          </p>
           <div className="mt-2 grid grid-cols-2 gap-2 text-left text-xs sm:text-sm">
             {ROLE_OPTIONS.map((option) => (
               <button

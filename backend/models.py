@@ -120,6 +120,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         order_by="RoleRequest.created_at.desc()",
+        foreign_keys="RoleRequest.user_id",
     )
     reviewed_role_requests = relationship(
         "RoleRequest",
