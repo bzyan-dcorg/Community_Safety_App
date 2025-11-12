@@ -147,11 +147,23 @@ class AuthEmailRegister(BaseModel):
         None,
         description="Optional explicit role selection for onboarding",
     )
+    role_justification: Optional[constr(max_length=500)] = Field(
+        None,
+        description="Short explanation for sensitive role requests",
+    )
 
 
 class AuthEmailLogin(BaseModel):
     email: EmailStr
     password: constr(min_length=8)
+    role: Optional[UserRole] = Field(
+        None,
+        description="Optional request to elevate role during login",
+    )
+    role_justification: Optional[constr(max_length=500)] = Field(
+        None,
+        description="Short explanation for sensitive role requests",
+    )
 
 
 class AuthOAuthPayload(BaseModel):
@@ -162,6 +174,38 @@ class AuthOAuthPayload(BaseModel):
     role: Optional[UserRole] = Field(
         None,
         description="Optional explicit role selection for onboarding",
+    )
+    role_justification: Optional[constr(max_length=500)] = Field(
+        None,
+        description="Short explanation for sensitive role requests",
+    )
+
+
+class RoleRequestPublic(BaseModel):
+    id: int
+    requested_role: UserRole
+    status: Literal["pending", "approved", "denied"]
+    justification: Optional[str] = None
+    reviewer_notes: Optional[str] = None
+    created_at: datetime
+    decided_at: Optional[datetime] = None
+    user: UserSummary
+    reviewer: Optional[UserSummary] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RoleRequestDecision(BaseModel):
+    action: Literal["approve", "deny"]
+    role: Optional[UserRole] = Field(
+        None,
+        description="Override when approving with a different role",
+    )
+    notes: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Optional reviewer notes",
     )
 
 

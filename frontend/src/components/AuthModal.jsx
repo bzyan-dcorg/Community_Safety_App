@@ -86,6 +86,7 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState(initialRole || "resident");
+  const [roleJustification, setRoleJustification] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleInitialized, setGoogleInitialized] = useState(false);
@@ -105,6 +106,12 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
   }, [initialRole]);
 
   useEffect(() => {
+    if (role === "resident") {
+      setRoleJustification("");
+    }
+  }, [role]);
+
+  useEffect(() => {
     if (!open) {
       setEmail("");
       setPassword("");
@@ -114,6 +121,7 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
       setGoogleInitialized(false);
       setAppleInitialized(false);
       setRole(initialRole || "resident");
+      setRoleJustification("");
     }
   }, [open, initialRole]);
 
@@ -135,6 +143,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
       }
 
       const resolvedName = nameHint?.trim() || normalizedEmail.split("@")[0];
+      const normalizedRole = role || "resident";
+      const justification = roleJustification.trim();
 
       setLoading(true);
       setError("");
@@ -145,7 +155,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
           email: normalizedEmail,
           display_name: resolvedName,
           id_token: idToken,
-          role,
+          role: normalizedRole,
+          ...(justification ? { role_justification: justification } : {}),
         });
         onClose?.();
       } catch (err) {
@@ -155,7 +166,7 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
         setLoading(false);
       }
     },
-    [loginWithProvider, onClose, role],
+    [loginWithProvider, onClose, role, roleJustification],
   );
 
   const handleGoogleCredential = useCallback(
@@ -266,6 +277,14 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
     setLoading(true);
     setError("");
 
+    const normalizedRole = role || "resident";
+    const justification = roleJustification.trim();
+
+    const rolePayload = {
+      role: normalizedRole,
+      ...(justification ? { role_justification: justification } : {}),
+    };
+
     const payload = {
       email: email.trim(),
       password: password.trim(),
@@ -273,12 +292,15 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
 
     try {
       if (mode === "login") {
-        await login(payload);
+        await login({
+          ...payload,
+          ...rolePayload,
+        });
       } else {
         await register({
           ...payload,
           display_name: displayName.trim(),
-          role,
+          ...rolePayload,
         });
       }
       onClose?.();
@@ -300,6 +322,9 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
         return;
       }
 
+      const normalizedRole = role || "resident";
+      const justification = roleJustification.trim();
+
       setLoading(true);
       setError("");
       try {
@@ -308,7 +333,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
           email: normalizedEmail,
           display_name: displayName.trim() || normalizedEmail.split("@")[0],
           id_token: `${provider}:${normalizedEmail}`,
-          role,
+          role: normalizedRole,
+          ...(justification ? { role_justification: justification } : {}),
         });
         onClose?.();
       } catch (err) {
@@ -318,7 +344,7 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
         setLoading(false);
       }
     },
-    [displayName, email, loginWithProvider, onClose, role],
+    [displayName, email, loginWithProvider, onClose, role, roleJustification],
   );
 
   const handleAppleLogin = useCallback(async () => {
@@ -417,6 +443,25 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
               </button>
             ))}
           </div>
+          {role !== "resident" && (
+            <>
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                Staff / Reporter / Officer access requires manual approval. We will create the account as a resident first
+                and auto-upgrade once reviewers confirm your role.
+              </div>
+              <div className="mt-3 space-y-2">
+                <label className="text-xs font-medium text-slate-500">
+                  Why do you need this role? (optional, shared with reviewers)
+                </label>
+                <textarea
+                  value={roleJustification}
+                  onChange={(event) => setRoleJustification(event.target.value)}
+                  className="min-h-[70px] w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-ink focus:border-ink focus:outline-none"
+                  placeholder="Example: I coordinate 311 safety responses for the city."
+                />
+              </div>
+            </>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

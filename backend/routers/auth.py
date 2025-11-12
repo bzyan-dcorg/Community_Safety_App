@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..db import get_db
 from ..security import create_access_token, get_current_user, get_password_hash, verify_password
+from ..services import role_requests as role_request_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-PUBLIC_ROLES = {"resident", "staff", "reporter", "officer"}
+PUBLIC_ROLES = set(role_request_service.VALID_ROLES)
 ROLE_ALIASES = {
     "employee": "staff",
     "city_employee": "staff",
@@ -83,6 +84,21 @@ def _resolve_requested_role(selection: Optional[str]) -> str:
     return "resident"
 
 
+def _apply_role_selection(
+    db: Session,
+    user: models.User,
+    requested_role: str,
+    justification: Optional[str],
+) -> None:
+    if not requested_role or requested_role == user.role:
+        return
+    if role_request_service.requires_manual_approval(requested_role):
+        role_request_service.queue_role_request(db, user, requested_role, justification)
+        return
+    user.role = requested_role
+    db.add(user)
+
+
 @router.post("/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
 def register_user(payload: schemas.AuthEmailRegister, db: Session = Depends(get_db)):
     email = _normalize_email(payload.email)
@@ -91,15 +107,28 @@ def register_user(payload: schemas.AuthEmailRegister, db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     display_name = payload.display_name.strip() if payload.display_name else email.split("@")[0]
-    role = _resolve_requested_role(payload.role)
+    requested_role = _resolve_requested_role(payload.role)
+    requires_approval = role_request_service.requires_manual_approval(requested_role)
+    assigned_role = requested_role if not requires_approval else "resident"
+
     user = models.User(
         email=email,
         hashed_password=get_password_hash(payload.password),
         display_name=display_name,
         auth_provider="password",
-        role=role,
+        role=assigned_role,
     )
     db.add(user)
+    db.flush()
+
+    if requires_approval:
+        role_request_service.queue_role_request(
+            db,
+            user,
+            requested_role,
+            payload.role_justification,
+        )
+
     db.commit()
     db.refresh(user)
 
@@ -113,6 +142,18 @@ def login_user(payload: schemas.AuthEmailLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    if payload.role and user.role == "resident":
+        requested_role = _resolve_requested_role(payload.role)
+        if requested_role != "resident":
+            _apply_role_selection(
+                db,
+                user,
+                requested_role,
+                payload.role_justification,
+            )
+            db.commit()
+            db.refresh(user)
 
     token = create_access_token(user)
     return schemas.TokenResponse(access_token=token, user=user)  # type: ignore[arg-type]
@@ -165,14 +206,24 @@ def login_with_provider(payload: schemas.AuthOAuthPayload, db: Session = Depends
         user = db.query(models.User).filter(models.User.email == email).first()
 
     if not user:
+        requires_approval = role_request_service.requires_manual_approval(requested_role)
+        assigned_role = requested_role if not requires_approval else "resident"
         user = models.User(
             email=email,
             display_name=display_name,
             auth_provider=payload.provider,
             provider_subject=subject,
-            role=requested_role,
+            role=assigned_role,
         )
         db.add(user)
+        db.flush()
+        if requires_approval:
+            role_request_service.queue_role_request(
+                db,
+                user,
+                requested_role,
+                payload.role_justification,
+            )
     else:
         # Update provider metadata if missing.
         if user.email != email:
@@ -182,8 +233,13 @@ def login_with_provider(payload: schemas.AuthOAuthPayload, db: Session = Depends
         user.auth_provider = payload.provider
         if display_name:
             user.display_name = display_name
-        if payload.role and user.role == "resident" and requested_role != "resident":
-            user.role = requested_role
+        if payload.role and requested_role != "resident" and user.role == "resident":
+            _apply_role_selection(
+                db,
+                user,
+                requested_role,
+                payload.role_justification,
+            )
 
     db.add(user)
     db.commit()

@@ -11,3 +11,11 @@ uvicorn backend.main:app --reload
   already-installed build tooling.
 - If you prefer not to perform the editable install, you can run `uvicorn main:app --reload` after activating the virtual
   environment.
+
+## Sensitive role approvals
+
+1. Run `python -m backend.scripts.bootstrap_admin --email admin@example.com --password <pwd>` to create the first `admin` reviewer.
+2. When `/auth/register`, `/auth/login`, or `/auth/oauth` receives `staff` / `reporter` / `officer`, the API stores a pending record in `role_requests` and keeps the user as a resident until approval.
+3. Reviewers (admin/officer) can call:
+   - `GET /role-requests/?status_filter=pending` to retrieve the queue.
+   - `POST /role-requests/{id}/decision` with `{"action":"approve"|"deny","notes":"..."}` (plus optional `role`) to approve or deny. Approved requests automatically elevate the user role.

@@ -115,6 +115,17 @@ class User(Base):
         cascade="all, delete-orphan",
         order_by="Notification.created_at",
     )
+    role_requests = relationship(
+        "RoleRequest",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="RoleRequest.created_at.desc()",
+    )
+    reviewed_role_requests = relationship(
+        "RoleRequest",
+        back_populates="reviewer",
+        foreign_keys="RoleRequest.reviewer_id",
+    )
 
     @property
     def membership_tier(self) -> str:
@@ -204,3 +215,28 @@ class Notification(Base):
 
     recipient = relationship("User", back_populates="notifications")
     incident = relationship("Incident")
+
+
+class RoleRequest(Base):
+    __tablename__ = "role_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    requested_role = Column(String(25), nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    justification = Column(String(500), nullable=True)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    reviewer_notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship(
+        "User",
+        foreign_keys=[user_id],
+        back_populates="role_requests",
+    )
+    reviewer = relationship(
+        "User",
+        foreign_keys=[reviewer_id],
+        back_populates="reviewed_role_requests",
+    )

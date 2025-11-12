@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import Base, engine, ensure_sqlite_schema
-from .routers import auth, incidents, notifications, taxonomy, users
+from .routers import auth, incidents, notifications, role_requests, taxonomy, users
 
 # create tables on startup (for dev)
 Base.metadata.create_all(bind=engine)
@@ -31,6 +31,7 @@ app.include_router(users.router)
 app.include_router(incidents.router)
 app.include_router(taxonomy.router)
 app.include_router(notifications.router)
+app.include_router(role_requests.router)
 
 
 @app.get("/")
