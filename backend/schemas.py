@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, constr
 IncidentType = Literal["police", "community", "public-order"]
 ContactedAuthorities = Literal["unknown", "none", "service-request", "911", "not-needed"]
 SafetySentiment = Literal["safe", "uneasy", "unsafe", "unsure"]
+UserRole = Literal["resident", "staff", "reporter", "officer"]
 
 
 class IncidentBase(BaseModel):
@@ -142,6 +143,10 @@ class AuthEmailRegister(BaseModel):
     email: EmailStr
     password: constr(min_length=8)
     display_name: Optional[str] = Field(None, max_length=100)
+    role: Optional[UserRole] = Field(
+        None,
+        description="Optional explicit role selection for onboarding",
+    )
 
 
 class AuthEmailLogin(BaseModel):
@@ -154,6 +159,10 @@ class AuthOAuthPayload(BaseModel):
     id_token: str = Field(..., description="Opaque token verified client-side")
     email: Optional[EmailStr] = None
     display_name: Optional[str] = Field(None, max_length=100)
+    role: Optional[UserRole] = Field(
+        None,
+        description="Optional explicit role selection for onboarding",
+    )
 
 
 class IncidentCommentCreate(BaseModel):

@@ -7,6 +7,29 @@ const TABS = [
   { id: "register", label: "Create account" },
 ];
 
+const ROLE_OPTIONS = [
+  {
+    id: "resident",
+    label: "Resident",
+    description: "Report what you see and earn rewards.",
+  },
+  {
+    id: "staff",
+    label: "City / agency staff",
+    description: "Coordinate service teams and alerts.",
+  },
+  {
+    id: "reporter",
+    label: "Journalist",
+    description: "Track and verify neighborhood signals.",
+  },
+  {
+    id: "officer",
+    label: "Officer",
+    description: "Respond to high-priority safety signals.",
+  },
+];
+
 const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID;
 const APPLE_CLIENT_ID = import.meta.env?.VITE_APPLE_CLIENT_ID;
 const APPLE_REDIRECT_URI = import.meta.env?.VITE_APPLE_REDIRECT_URI;
@@ -57,11 +80,12 @@ function extractDisplayName(claims) {
   return combined || undefined;
 }
 
-export default function AuthModal({ open, onClose, initialMode = "login" }) {
+export default function AuthModal({ open, onClose, initialMode = "login", initialRole = "resident" }) {
   const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState(initialRole || "resident");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleInitialized, setGoogleInitialized] = useState(false);
@@ -77,6 +101,10 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
   }, [initialMode]);
 
   useEffect(() => {
+    setRole(initialRole || "resident");
+  }, [initialRole]);
+
+  useEffect(() => {
     if (!open) {
       setEmail("");
       setPassword("");
@@ -85,8 +113,9 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
       setLoading(false);
       setGoogleInitialized(false);
       setAppleInitialized(false);
+      setRole(initialRole || "resident");
     }
-  }, [open]);
+  }, [open, initialRole]);
 
   const handleCredentialLogin = useCallback(
     async (provider, idToken, { email: emailHint, displayName: nameHint } = {}) => {
@@ -116,6 +145,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
           email: normalizedEmail,
           display_name: resolvedName,
           id_token: idToken,
+          role,
         });
         onClose?.();
       } catch (err) {
@@ -125,7 +155,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
         setLoading(false);
       }
     },
-    [loginWithProvider, onClose],
+    [loginWithProvider, onClose, role],
   );
 
   const handleGoogleCredential = useCallback(
@@ -248,6 +278,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
         await register({
           ...payload,
           display_name: displayName.trim(),
+          role,
         });
       }
       onClose?.();
@@ -277,6 +308,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
           email: normalizedEmail,
           display_name: displayName.trim() || normalizedEmail.split("@")[0],
           id_token: `${provider}:${normalizedEmail}`,
+          role,
         });
         onClose?.();
       } catch (err) {
@@ -286,7 +318,7 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
         setLoading(false);
       }
     },
-    [displayName, email, loginWithProvider, onClose],
+    [displayName, email, loginWithProvider, onClose, role],
   );
 
   const handleAppleLogin = useCallback(async () => {
@@ -364,6 +396,27 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
               {tab.label}
             </button>
           ))}
+        </div>
+
+        <div className="mt-5">
+          <p className="text-xs font-medium text-slate-500">I&apos;m signing in as</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-left text-xs sm:text-sm">
+            {ROLE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setRole(option.id)}
+                className={`rounded-2xl border px-3 py-2 text-left transition ${
+                  role === option.id
+                    ? "border-ink bg-ink/5 text-ink"
+                    : "border-slate-200 text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <span className="block text-sm font-semibold">{option.label}</span>
+                <span className="block text-[11px] text-slate-500">{option.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -444,6 +497,12 @@ export default function AuthModal({ open, onClose, initialMode = "login" }) {
             Continue with Apple
           </button>
         </div>
+        {(!providerSupportsGoogle || !providerSupportsApple) && (
+          <p className="mt-2 text-[11px] text-slate-400">
+            Configure VITE_GOOGLE_CLIENT_ID / VITE_APPLE_CLIENT_ID to enable one-click sign-in.
+            Without keys we simulate the provider flow using the email entered above.
+          </p>
+        )}
       </div>
     </div>
   );

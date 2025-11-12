@@ -9,6 +9,18 @@ from ..db import get_db
 from ..security import create_access_token, get_current_user, get_password_hash, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+PUBLIC_ROLES = {"resident", "staff", "reporter", "officer"}
+ROLE_ALIASES = {
+    "employee": "staff",
+    "city_employee": "staff",
+    "city_staff": "staff",
+    "journalist": "reporter",
+    "media": "reporter",
+    "press": "reporter",
+    "police": "officer",
+    "law_enforcement": "officer",
+    "officer": "officer",
+}
 
 
 def _normalize_email(email: str) -> str:
@@ -61,6 +73,16 @@ def _extract_display_name_from_claims(claims: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _resolve_requested_role(selection: Optional[str]) -> str:
+    if not selection:
+        return "resident"
+    normalized = selection.strip().lower()
+    normalized = ROLE_ALIASES.get(normalized, normalized)
+    if normalized in PUBLIC_ROLES:
+        return normalized
+    return "resident"
+
+
 @router.post("/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
 def register_user(payload: schemas.AuthEmailRegister, db: Session = Depends(get_db)):
     email = _normalize_email(payload.email)
@@ -69,11 +91,13 @@ def register_user(payload: schemas.AuthEmailRegister, db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     display_name = payload.display_name.strip() if payload.display_name else email.split("@")[0]
+    role = _resolve_requested_role(payload.role)
     user = models.User(
         email=email,
         hashed_password=get_password_hash(payload.password),
         display_name=display_name,
         auth_provider="password",
+        role=role,
     )
     db.add(user)
     db.commit()
@@ -128,6 +152,8 @@ def login_with_provider(payload: schemas.AuthOAuthPayload, db: Session = Depends
     if not display_name:
         display_name = email.split("@")[0]
 
+    requested_role = _resolve_requested_role(payload.role)
+
     user = (
         db.query(models.User)
         .filter(models.User.auth_provider == payload.provider, models.User.provider_subject == subject)
@@ -144,6 +170,7 @@ def login_with_provider(payload: schemas.AuthOAuthPayload, db: Session = Depends
             display_name=display_name,
             auth_provider=payload.provider,
             provider_subject=subject,
+            role=requested_role,
         )
         db.add(user)
     else:
@@ -155,6 +182,8 @@ def login_with_provider(payload: schemas.AuthOAuthPayload, db: Session = Depends
         user.auth_provider = payload.provider
         if display_name:
             user.display_name = display_name
+        if payload.role and user.role == "resident" and requested_role != "resident":
+            user.role = requested_role
 
     db.add(user)
     db.commit()

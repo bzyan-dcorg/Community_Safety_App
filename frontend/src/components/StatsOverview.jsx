@@ -2,12 +2,12 @@ export default function StatsOverview({ stats, error, onRefresh }) {
   const cards = [
     {
       label: "Signals Logged",
-      value: stats?.total ?? "–",
+      value: stats?.total ?? "-",
       helper: "Rolling 7-day ingestion",
     },
     {
       label: "Follow-ups Due",
-      value: stats?.active_follow_up ?? "–",
+      value: stats?.active_follow_up ?? "-",
       helper: "Incidents awaiting confirmation",
     },
     {
@@ -17,7 +17,7 @@ export default function StatsOverview({ stats, error, onRefresh }) {
     },
     {
       label: "Avg. Credibility",
-      value: stats ? Number(stats.avg_credibility ?? 0).toFixed(2) : "–",
+      value: stats ? Number(stats.avg_credibility ?? 0).toFixed(2) : "-",
       helper: "Community reputation heuristic",
     },
   ];

@@ -6,6 +6,7 @@ import SentimentPulse from "./components/SentimentPulse.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import UserDashboardModal from "./components/UserDashboardModal.jsx";
+import RoleAccessPanel from "./components/RoleAccessPanel.jsx";
 import { fetchStats, fetchTaxonomy } from "./api.js";
 import { useAuth } from "./context/AuthContext.jsx";
 
@@ -28,6 +29,7 @@ export default function App() {
   const { authenticated, user, logout, initializing: authLoading } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState("login");
+  const [authModalRole, setAuthModalRole] = useState("resident");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [taxonomy, setTaxonomy] = useState(null);
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
@@ -40,8 +42,9 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [refreshToken, setRefreshToken] = useState(0);
 
-  const handleRequireAuth = (mode = "login") => {
+  const handleRequireAuth = (mode = "login", role = "resident") => {
     setAuthModalMode(mode);
+    setAuthModalRole(role);
     setAuthModalOpen(true);
   };
 
@@ -162,6 +165,7 @@ export default function App() {
         </header>
 
         <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-16 xs:px-6 sm:px-8 lg:px-10">
+          <RoleAccessPanel onAuthRequest={handleRequireAuth} authLoading={authLoading} />
           <section className="grid gap-6 lg:grid-cols-[minmax(0,_2fr)_minmax(0,_3fr)]">
             <div className="space-y-6">
               <StatsOverview
@@ -248,6 +252,7 @@ export default function App() {
       <AuthModal
         open={authModalOpen}
         initialMode={authModalMode}
+        initialRole={authModalRole}
         onClose={() => setAuthModalOpen(false)}
       />
     </div>
