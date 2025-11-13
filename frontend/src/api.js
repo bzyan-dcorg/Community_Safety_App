@@ -6,6 +6,12 @@ function resolveApiBase() {
     return explicit.replace(/\/$/, "");
   }
 
+  const devProxyEnabled =
+    import.meta.env?.DEV && import.meta.env?.VITE_DISABLE_DEV_PROXY !== "1";
+  if (devProxyEnabled) {
+    return "/api";
+  }
+
   if (typeof window !== "undefined") {
     const { protocol, hostname } = window.location;
     const port = import.meta.env?.VITE_API_PORT ?? "8000";
