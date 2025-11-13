@@ -32,8 +32,8 @@ INCIDENTS = [
     "still_happening": True,
     "feel_safe_now": True,
     "police_seen": False,
-    "contacted_authorities": "311",
-    "safety_sentiment": "concerned",
+    "contacted_authorities": "service-request",
+    "safety_sentiment": "uneasy",
     "credibility_score": 0.76,
   },
   {
@@ -47,7 +47,7 @@ INCIDENTS = [
     "feel_safe_now": True,
     "police_seen": False,
     "contacted_authorities": "none",
-    "safety_sentiment": "neutral",
+    "safety_sentiment": "safe",
     "credibility_score": 0.58,
   },
   {
@@ -61,7 +61,7 @@ INCIDENTS = [
     "feel_safe_now": False,
     "police_seen": True,
     "contacted_authorities": "911",
-    "safety_sentiment": "alert",
+    "safety_sentiment": "unsafe",
     "credibility_score": 0.84,
   },
 ]

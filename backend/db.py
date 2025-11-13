@@ -28,6 +28,47 @@ def _sqlite_has_column(connection, table_name: str, column_name: str) -> bool:
     return any(row[1] == column_name for row in rows)
 
 
+VALID_CONTACTED_AUTHORITIES = {"unknown", "none", "service-request", "911", "not-needed"}
+VALID_SAFETY_SENTIMENTS = {"safe", "uneasy", "unsafe", "unsure"}
+CONTACTED_FALLBACKS = {
+    "311": "service-request",
+    "service_request": "service-request",
+    "service": "service-request",
+}
+SENTIMENT_FALLBACKS = {
+    "concerned": "uneasy",
+    "alert": "unsafe",
+    "neutral": "safe",
+    "ok": "safe",
+}
+
+
+def _normalize_incident_enum(connection, column_name: str, valid_values, fallback_map, default_value) -> None:
+    """Clamp legacy/invalid incident enum values to supported options."""
+    rows = connection.execute(
+        text(f"SELECT id, {column_name} FROM incidents WHERE {column_name} IS NOT NULL")
+    ).fetchall()
+    for row_id, raw_value in rows:
+        value = raw_value.strip() if isinstance(raw_value, str) else raw_value
+        if not value:
+            replacement = default_value
+        elif value in valid_values:
+            continue
+        else:
+            replacement = fallback_map.get(value, default_value)
+
+        if replacement is None:
+            connection.execute(
+                text(f"UPDATE incidents SET {column_name} = NULL WHERE id = :row_id"),
+                {"row_id": row_id},
+            )
+        else:
+            connection.execute(
+                text(f"UPDATE incidents SET {column_name} = :replacement WHERE id = :row_id"),
+                {"replacement": replacement, "row_id": row_id},
+            )
+
+
 def ensure_sqlite_schema():
     """Apply lightweight ALTER TABLE statements so sqlite gains the newest columns."""
     if not engine.url.drivername.startswith("sqlite"):
@@ -57,3 +98,17 @@ def ensure_sqlite_schema():
             connection.execute(
                 text("ALTER TABLE incidents ADD COLUMN verification_alert_sent BOOLEAN NOT NULL DEFAULT 0")
             )
+        _normalize_incident_enum(
+            connection,
+            "contacted_authorities",
+            VALID_CONTACTED_AUTHORITIES,
+            CONTACTED_FALLBACKS,
+            "unknown",
+        )
+        _normalize_incident_enum(
+            connection,
+            "safety_sentiment",
+            VALID_SAFETY_SENTIMENTS,
+            SENTIMENT_FALLBACKS,
+            None,
+        )

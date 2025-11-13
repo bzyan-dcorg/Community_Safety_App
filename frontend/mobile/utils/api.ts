@@ -4,12 +4,44 @@ type RequestOptions = RequestInit & {
   headers?: Record<string, string>;
 };
 
-const envBase = process.env.EXPO_PUBLIC_API_BASE_URL;
-const manifestBase =
-  Constants.expoConfig?.extra?.apiBaseUrl ||
-  (Constants.manifest2?.extra as Record<string, string> | undefined)?.apiBaseUrl;
+type ExpoExtra = {
+  apiBaseUrl?: string;
+  expoGo?: {
+    hostUri?: string;
+    debuggerHost?: string;
+  };
+};
 
-const API_BASE = (envBase || manifestBase || 'http://127.0.0.1:8000').replace(/\/$/, '');
+const envBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const expoExtra = (Constants.expoConfig?.extra || {}) as ExpoExtra;
+const manifest2Extra = (Constants.manifest2?.extra || {}) as ExpoExtra;
+const manifestBase = expoExtra.apiBaseUrl || manifest2Extra.apiBaseUrl;
+
+function resolveDeviceHost(): string | null {
+  const legacyManifest = (Constants.manifest as { hostUri?: string; debuggerHost?: string } | null) || undefined;
+  const candidateHost =
+    expoExtra.expoGo?.hostUri ||
+    expoExtra.expoGo?.debuggerHost ||
+    manifest2Extra.expoGo?.hostUri ||
+    manifest2Extra.expoGo?.debuggerHost ||
+    Constants.expoConfig?.hostUri ||
+    legacyManifest?.debuggerHost ||
+    legacyManifest?.hostUri;
+
+  if (!candidateHost) {
+    return null;
+  }
+
+  const [host] = candidateHost.split(':');
+  if (!host) {
+    return null;
+  }
+  const port = process.env.EXPO_PUBLIC_API_PORT?.trim() || '8000';
+  return `http://${host}:${port}`;
+}
+
+const inferredBase = resolveDeviceHost();
+const API_BASE = (envBase || manifestBase || inferredBase || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 export class ApiError extends Error {
   status?: number;
@@ -21,14 +53,23 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Network request failed';
+    throw new ApiError(
+      `Unable to reach the Community Safety API at ${API_BASE}. ${reason}. ` +
+        'If you are on a device, set EXPO_PUBLIC_API_BASE_URL to your computer IP.',
+    );
+  }
 
   if (!response.ok) {
     let detail = 'Unknown error';
