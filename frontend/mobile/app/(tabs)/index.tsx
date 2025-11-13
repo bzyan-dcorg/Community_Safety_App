@@ -20,6 +20,8 @@ import {
   getApiBaseUrl,
   loginUser,
   registerUser,
+  resetApiBaseUrl,
+  setApiBaseUrl as overrideApiBaseUrl,
 } from '@/utils/api';
 
 const MODES = [
@@ -56,8 +58,6 @@ const DEFAULT_SNAPSHOT = [
   { label: 'Active follow-ups', value: '—', detail: 'Connect to backend' },
 ];
 
-const apiBaseUrl = getApiBaseUrl();
-
 const formatLabel = (value: string) =>
   value
     .split(/[-_]/)
@@ -73,6 +73,7 @@ const formatTime = (value: string) => {
 };
 
 export default function HomeScreen() {
+  const [apiBaseUrl, setApiBaseUrlState] = useState(getApiBaseUrl());
   const [showAuthPreview, setShowAuthPreview] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [role, setRole] = useState('resident');
@@ -90,6 +91,9 @@ export default function HomeScreen() {
   const [incidents, setIncidents] = useState<IncidentPreview[]>([]);
   const [incidentsLoading, setIncidentsLoading] = useState(false);
   const [incidentsError, setIncidentsError] = useState('');
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [pendingApiBase, setPendingApiBase] = useState(apiBaseUrl);
+  const [apiConfigError, setApiConfigError] = useState('');
 
   const roleRequiresJustification = role !== 'resident';
 
@@ -109,8 +113,44 @@ export default function HomeScreen() {
   };
 
   const openAuthPreview = (selectedMode: 'login' | 'register') => {
+    setShowApiConfig(false);
     setMode(selectedMode);
     setShowAuthPreview(true);
+  };
+
+  const openApiConfig = () => {
+    setPendingApiBase(apiBaseUrl);
+    setApiConfigError('');
+    setShowApiConfig(true);
+  };
+
+  const closeApiConfig = () => {
+    setApiConfigError('');
+    setShowApiConfig(false);
+  };
+
+  const applyApiBaseOverride = () => {
+    if (!pendingApiBase.trim()) {
+      setApiConfigError('Enter the URL where your FastAPI backend is running.');
+      return;
+    }
+    const updatedBase = overrideApiBaseUrl(pendingApiBase);
+    setApiBaseUrlState(updatedBase);
+    setPendingApiBase(updatedBase);
+    setApiConfigError('');
+    setShowApiConfig(false);
+    loadStats();
+    loadIncidents();
+  };
+
+  const resetApiBaseOverride = () => {
+    const restoredBase = resetApiBaseUrl();
+    setApiBaseUrlState(restoredBase);
+    setPendingApiBase(restoredBase);
+    setApiConfigError('');
+    setShowApiConfig(false);
+    loadStats();
+    loadIncidents();
   };
 
   const loadStats = useCallback(async () => {
@@ -244,7 +284,9 @@ export default function HomeScreen() {
             <View style={styles.heroMetaPill}>
               <Text style={styles.heroMetaText}>Live beta</Text>
             </View>
-            <Text style={styles.heroMetaSecondary}>API: {apiBaseUrl}</Text>
+            <Pressable style={styles.heroMetaSecondaryButton} onPress={openApiConfig}>
+              <Text style={styles.heroMetaSecondary}>API: {apiBaseUrl}</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -457,6 +499,39 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
       )}
+
+      {showApiConfig && (
+        <View style={styles.authOverlay}>
+          <Pressable style={styles.overlayBackdrop} onPress={closeApiConfig}>
+            <Text style={{ opacity: 0 }}>Close</Text>
+          </Pressable>
+          <View style={styles.apiConfigCard}>
+            <Text style={styles.apiConfigTitle}>Configure API connection</Text>
+            <Text style={styles.apiConfigSubtitle}>
+              Point this preview at a running FastAPI backend. Use your computer&apos;s LAN IP (for example
+              http://192.168.0.42:8000) when testing on a physical device.
+            </Text>
+            <TextInput
+              value={pendingApiBase}
+              onChangeText={setPendingApiBase}
+              style={styles.input}
+              placeholder="http://192.168.0.42:8000"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {apiConfigError ? <Text style={styles.errorLabel}>{apiConfigError}</Text> : null}
+            <View style={styles.apiConfigActions}>
+              <Pressable style={styles.apiConfigSecondaryButton} onPress={resetApiBaseOverride}>
+                <Text style={styles.apiConfigSecondaryLabel}>Reset</Text>
+              </Pressable>
+              <Pressable style={styles.apiConfigPrimaryButton} onPress={applyApiBaseOverride}>
+                <Text style={styles.apiConfigPrimaryLabel}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -546,6 +621,13 @@ const styles = StyleSheet.create({
   heroMetaSecondary: {
     color: '#94a3b8',
     fontSize: 12,
+  },
+  heroMetaSecondaryButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   sectionCard: {
     backgroundColor: 'white',
@@ -862,6 +944,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 16,
     lineHeight: 18,
+  },
+  apiConfigCard: {
+    position: 'absolute',
+    bottom: 40,
+    left: 24,
+    right: 24,
+    borderRadius: 28,
+    backgroundColor: 'white',
+    padding: 20,
+    gap: 12,
+  },
+  apiConfigTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#020617',
+  },
+  apiConfigSubtitle: {
+    color: '#475569',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  apiConfigActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  apiConfigSecondaryButton: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  apiConfigSecondaryLabel: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  apiConfigPrimaryButton: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: '#0f172a',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  apiConfigPrimaryLabel: {
+    color: 'white',
+    fontWeight: '600',
   },
   errorLabel: {
     color: '#b91c1c',

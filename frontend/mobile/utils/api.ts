@@ -41,7 +41,18 @@ function resolveDeviceHost(): string | null {
 }
 
 const inferredBase = resolveDeviceHost();
-const API_BASE = (envBase || manifestBase || inferredBase || 'http://127.0.0.1:8000').replace(/\/$/, '');
+const DEFAULT_API_BASE = (envBase || manifestBase || inferredBase || 'http://127.0.0.1:8000').replace(/\/$/, '');
+
+const normalizeBase = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_API_BASE;
+  }
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  return withProtocol.replace(/\/+$/, '');
+};
+
+let API_BASE = DEFAULT_API_BASE;
 
 export class ApiError extends Error {
   status?: number;
@@ -142,5 +153,15 @@ export function loginUser(payload: {
 }
 
 export function getApiBaseUrl() {
+  return API_BASE;
+}
+
+export function setApiBaseUrl(value: string) {
+  API_BASE = normalizeBase(value);
+  return API_BASE;
+}
+
+export function resetApiBaseUrl() {
+  API_BASE = DEFAULT_API_BASE;
   return API_BASE;
 }
