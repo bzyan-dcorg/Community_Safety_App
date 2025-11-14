@@ -17,7 +17,9 @@ SECRET_KEY = os.getenv("APP_SECRET_KEY", "super-secret-key-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 在某些 macOS / conda 环境下会加载到系统旧版扩展，触发 MissingBackendError。
+# 统一改用 pbkdf2_sha256，避免对底层 C 扩展的依赖。
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 

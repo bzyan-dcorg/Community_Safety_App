@@ -80,6 +80,25 @@ function extractDisplayName(claims) {
   return combined || undefined;
 }
 
+function formatErrorDetail(detail) {
+  if (!detail) {
+    return null;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .join(", ");
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return String(detail);
+  }
+}
+
 export default function AuthModal({ open, onClose, initialMode = "login", initialRole = "resident" }) {
   const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
@@ -160,8 +179,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
         });
         onClose?.();
       } catch (err) {
-        const detail = err?.response?.data?.detail || `Unable to continue with ${provider}.`;
-        setError(Array.isArray(detail) ? detail.join(", ") : detail);
+        const detail = formatErrorDetail(err?.response?.data?.detail) || `Unable to continue with ${provider}.`;
+        setError(detail);
       } finally {
         setLoading(false);
       }
@@ -305,8 +324,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
       }
       onClose?.();
     } catch (err) {
-      const detail = err?.response?.data?.detail || "Unable to complete request.";
-      setError(Array.isArray(detail) ? detail.join(", ") : detail);
+      const detail = formatErrorDetail(err?.response?.data?.detail) || "Unable to complete request.";
+      setError(detail);
     } finally {
       setLoading(false);
     }
@@ -338,8 +357,8 @@ export default function AuthModal({ open, onClose, initialMode = "login", initia
         });
         onClose?.();
       } catch (err) {
-        const detail = err?.response?.data?.detail || "Unable to continue with provider.";
-        setError(Array.isArray(detail) ? detail.join(", ") : detail);
+        const detail = formatErrorDetail(err?.response?.data?.detail) || "Unable to continue with provider.";
+        setError(detail);
       } finally {
         setLoading(false);
       }

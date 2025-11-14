@@ -223,6 +223,7 @@ class IncidentCommentPublic(BaseModel):
     likes_count: int = 0
     unlikes_count: int = 0
     viewer_reaction: Optional[Literal["like", "unlike"]] = None
+    is_hidden: bool = False
 
     class Config:
         from_attributes = True
@@ -277,6 +278,7 @@ class IncidentPublic(IncidentBase):
     viewer_reaction: Optional[Literal["like", "unlike"]] = None
     reporter: Optional[UserSummary] = None
     reward_points_awarded: int = 0
+    is_hidden: bool = False
 
     class Config:
         from_attributes = True
@@ -290,6 +292,14 @@ class IncidentStats(BaseModel):
     prompt_completion_rate: float
     sentiment_breakdown: Dict[str, int]
     avg_credibility: float
+
+
+class ModerationToggle(BaseModel):
+    hidden: bool = Field(..., description="True to hide, False to restore visibility")
+
+
+class CommentModerationToggle(BaseModel):
+    hidden: bool = Field(..., description="True to hide, False to restore visibility")
 
 
 class TaxonomyGroup(BaseModel):

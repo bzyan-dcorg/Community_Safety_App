@@ -150,3 +150,35 @@ export async function fetchUserOverview() {
   const resp = await apiClient.get("/users/me/overview");
   return resp.data;
 }
+
+export async function fetchRoleRequests(params = {}) {
+  const resp = await apiClient.get("/role-requests/", {
+    params: sanitizeParams(params),
+  });
+  return resp.data;
+}
+
+export async function decideRoleRequest(id, data) {
+  const resp = await apiClient.post(`/role-requests/${id}/decision`, data, {
+    headers: { "Content-Type": "application/json" },
+  });
+  return resp.data;
+}
+
+export async function setIncidentVisibility(id, hidden) {
+  const resp = await apiClient.patch(`/incidents/${id}/visibility`, { hidden }, {
+    headers: { "Content-Type": "application/json" },
+  });
+  return resp.data;
+}
+
+export async function setCommentVisibility(incidentId, commentId, hidden) {
+  const resp = await apiClient.patch(
+    `/incidents/${incidentId}/comments/${commentId}/visibility`,
+    { hidden },
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+  return resp.data;
+}

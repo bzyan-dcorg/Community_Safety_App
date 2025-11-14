@@ -18,6 +18,7 @@ router = APIRouter(
 FOLLOW_UP_INITIAL_MINUTES = 30
 FOLLOW_UP_EXTENDED_MINUTES = 120
 RESOLVED_STATUSES = {"official-confirmed", "resolved"}
+MODERATOR_ROLES = {"admin", "officer"}
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 VERIFIER_ROLES = {"admin", "reporter", "officer"}
 
@@ -103,6 +104,22 @@ def _apply_reward_progress(db: Session, incident: models.Incident) -> None:
     db.add(reporter)
 
 
+def _can_view_hidden(user: Optional[models.User]) -> bool:
+    return bool(user and user.role in MODERATOR_ROLES)
+
+
+def _prune_hidden_comments(incident: models.Incident, current_user: Optional[models.User]) -> None:
+    if _can_view_hidden(current_user):
+        return
+    incident.comments = [comment for comment in incident.comments if not comment.is_hidden]
+
+
+def _assert_moderator(user: Optional[models.User]) -> models.User:
+    if not user or user.role not in MODERATOR_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Moderator permissions required")
+    return user
+
+
 def _populate_interaction_metadata(incident: models.Incident, current_user: Optional[models.User]) -> None:
     likes = 0
     unlikes = 0
@@ -127,6 +144,7 @@ def _populate_interaction_metadata(incident: models.Incident, current_user: Opti
 
     for comment in incident.comments:
         _populate_comment_metadata(comment, current_user)
+    _prune_hidden_comments(incident, current_user)
 
 
 def _populate_comment_metadata(comment: models.IncidentComment, current_user: Optional[models.User]) -> None:
@@ -199,6 +217,7 @@ def list_incidents(
     category_filter: Optional[str] = Query(None, description="Filter by taxonomy category"),
     incident_type: Optional[str] = Query(None, description="Filter by incident type"),
     needs_follow_up: bool = Query(False, description="Only incidents with follow-ups due"),
+    include_hidden: bool = Query(False, description="Include hidden incidents (moderators only)"),
     current_user: Optional[models.User] = Depends(optional_current_user),
 ):
     """Return recent incidents, including follow-up timeline and optional filters."""
@@ -217,6 +236,10 @@ def list_incidents(
         )
         .order_by(models.Incident.created_at.desc())
     )
+
+    can_view_hidden = _can_view_hidden(current_user)
+    if not can_view_hidden or not include_hidden:
+        q = q.filter(models.Incident.is_hidden.is_(False))
 
     if status_filter:
         q = q.filter(models.Incident.status == status_filter)
@@ -240,10 +263,12 @@ def list_incidents(
 
 @router.get("/stats", response_model=schemas.IncidentStats)
 def incident_stats(db: Session = Depends(get_db)):
-    total = db.query(func.count(models.Incident.id)).scalar() or 0
+    visible_filter = models.Incident.is_hidden.is_(False)
+    total = db.query(func.count(models.Incident.id)).filter(visible_filter).scalar() or 0
 
     status_rows = (
         db.query(models.Incident.status, func.count(models.Incident.id))
+        .filter(visible_filter)
         .group_by(models.Incident.status)
         .all()
     )
@@ -251,6 +276,7 @@ def incident_stats(db: Session = Depends(get_db)):
 
     type_rows = (
         db.query(models.Incident.incident_type, func.count(models.Incident.id))
+        .filter(visible_filter)
         .group_by(models.Incident.incident_type)
         .all()
     )
@@ -263,6 +289,7 @@ def incident_stats(db: Session = Depends(get_db)):
             | (models.Incident.police_seen.isnot(None))
             | (models.Incident.feel_safe_now.isnot(None))
         )
+        .filter(visible_filter)
         .scalar()
         or 0
     )
@@ -271,6 +298,7 @@ def incident_stats(db: Session = Depends(get_db)):
     sentiment_rows = (
         db.query(models.Incident.safety_sentiment, func.count(models.Incident.id))
         .filter(models.Incident.safety_sentiment.isnot(None))
+        .filter(visible_filter)
         .group_by(models.Incident.safety_sentiment)
         .all()
     )
@@ -281,11 +309,14 @@ def incident_stats(db: Session = Depends(get_db)):
         .filter(models.Incident.follow_up_due_at.isnot(None))
         .filter(models.Incident.follow_up_due_at <= _now_utc())
         .filter(~models.Incident.status.in_(tuple(RESOLVED_STATUSES)))
+        .filter(visible_filter)
         .scalar()
         or 0
     )
 
-    avg_credibility = db.query(func.avg(models.Incident.credibility_score)).scalar() or 0.0
+    avg_credibility = (
+        db.query(func.avg(models.Incident.credibility_score)).filter(visible_filter).scalar() or 0.0
+    )
 
     return schemas.IncidentStats(
         total=total,
@@ -320,6 +351,9 @@ def get_incident(
         .first()
     )
     if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    can_view_hidden = _can_view_hidden(current_user)
+    if incident.is_hidden and not can_view_hidden:
         raise HTTPException(status_code=404, detail="Incident not found")
     _populate_interaction_metadata(incident, current_user)
     return incident
@@ -594,3 +628,74 @@ def set_comment_reaction(
 
     db.commit()
     return _reload_comment(db, comment_id, current_user)
+
+
+@router.patch(
+    "/{incident_id}/visibility",
+    response_model=schemas.IncidentPublic,
+)
+def update_incident_visibility(
+    incident_id: int,
+    payload: schemas.ModerationToggle,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    moderator = _assert_moderator(current_user)
+    incident = (
+        db.query(models.Incident)
+        .options(
+            selectinload(models.Incident.reporter),
+            selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.comments).options(
+                selectinload(models.IncidentComment.user),
+                selectinload(models.IncidentComment.attachments),
+                selectinload(models.IncidentComment.reactions),
+            ),
+            selectinload(models.Incident.reactions),
+        )
+        .filter(models.Incident.id == incident_id)
+        .first()
+    )
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    incident.is_hidden = payload.hidden
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    _populate_interaction_metadata(incident, moderator)
+    return incident
+
+
+@router.patch(
+    "/{incident_id}/comments/{comment_id}/visibility",
+    response_model=schemas.IncidentCommentPublic,
+)
+def update_comment_visibility(
+    incident_id: int,
+    comment_id: int,
+    payload: schemas.CommentModerationToggle,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    moderator = _assert_moderator(current_user)
+    comment = (
+        db.query(models.IncidentComment)
+        .options(
+            selectinload(models.IncidentComment.user),
+            selectinload(models.IncidentComment.attachments),
+            selectinload(models.IncidentComment.reactions),
+        )
+        .filter(
+            models.IncidentComment.id == comment_id,
+            models.IncidentComment.incident_id == incident_id,
+        )
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    comment.is_hidden = payload.hidden
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    _populate_comment_metadata(comment, moderator)
+    return comment

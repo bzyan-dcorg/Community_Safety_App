@@ -1,8 +1,11 @@
+import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+DEFAULT_SQLITE_PATH = os.path.join(BASE_DIR, "community.db")
 # For dev: local SQLite file. Later we can move to MySQL/Postgres easily.
-DATABASE_URL = "sqlite:///./community.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_SQLITE_PATH}")
 
 engine = create_engine(
     DATABASE_URL,
@@ -97,6 +100,20 @@ def ensure_sqlite_schema():
         if not _sqlite_has_column(connection, "incidents", "verification_alert_sent"):
             connection.execute(
                 text("ALTER TABLE incidents ADD COLUMN verification_alert_sent BOOLEAN NOT NULL DEFAULT 0")
+            )
+        if not _sqlite_has_column(connection, "incidents", "is_hidden"):
+            connection.execute(
+                text("ALTER TABLE incidents ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT 0")
+            )
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_incidents_is_hidden ON incidents (is_hidden)")
+            )
+        if not _sqlite_has_column(connection, "incident_comments", "is_hidden"):
+            connection.execute(
+                text("ALTER TABLE incident_comments ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT 0")
+            )
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_incident_comments_is_hidden ON incident_comments (is_hidden)")
             )
         _normalize_incident_enum(
             connection,

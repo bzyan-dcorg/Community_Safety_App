@@ -41,6 +41,7 @@ class Incident(Base):
     reporter_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     reward_points_awarded = Column(Integer, nullable=False, default=0)
     verification_alert_sent = Column(Boolean, nullable=False, default=False)
+    is_hidden = Column(Boolean, nullable=False, default=False, index=True)
 
     # timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -142,6 +143,7 @@ class IncidentComment(Base):
     body = Column(String(2000), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    is_hidden = Column(Boolean, nullable=False, default=False, index=True)
 
     incident = relationship("Incident", back_populates="comments")
     user = relationship("User", back_populates="comments")
