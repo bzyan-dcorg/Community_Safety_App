@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,6 +12,13 @@ from ..services.rewards import tier_progress
 router = APIRouter(prefix="/users", tags=["users"])
 
 VERIFIED_STATUSES = {"community-confirmed", "official-confirmed", "resolved"}
+ADMIN_ROLE = "admin"
+
+
+def _assert_admin(user: models.User) -> models.User:
+    if user.role != ADMIN_ROLE:
+        raise HTTPException(status_code=403, detail="Admin permissions required")
+    return user
 
 
 def _serialize_posts(incidents: List[models.Incident]) -> List[schemas.UserPostBrief]:
@@ -109,3 +116,39 @@ def get_my_overview(
         recent_posts=_serialize_posts(incidents),
         unread_notifications=unread_notifications,
     )
+
+
+@router.get("/", response_model=List[schemas.UserProfile])
+def search_users(
+    query: Optional[str] = Query(None, max_length=255, description="Filter by email or display name"),
+    limit: int = Query(25, ge=1, le=200),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_admin(current_user)
+    qset = db.query(models.User)
+    if query:
+        like = f"%{query.strip().lower()}%"
+        qset = qset.filter(
+            func.lower(models.User.email).like(like)
+            | func.lower(models.User.display_name).like(like)
+        )
+    return qset.order_by(models.User.created_at.desc()).limit(limit).all()
+
+
+@router.patch("/{user_id}/rewards", response_model=schemas.UserProfile)
+def update_user_rewards(
+    user_id: int,
+    payload: schemas.UserRewardUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_admin(current_user)
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.reward_points = payload.reward_points
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

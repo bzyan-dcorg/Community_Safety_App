@@ -19,6 +19,8 @@ FOLLOW_UP_INITIAL_MINUTES = 30
 FOLLOW_UP_EXTENDED_MINUTES = 120
 RESOLVED_STATUSES = {"official-confirmed", "resolved"}
 MODERATOR_ROLES = {"admin", "officer"}
+APPROVER_ROLES = {"staff", "reporter", "officer"}
+ALLOWED_STATUS_UPDATES = {"unverified", "community-confirmed", "official-confirmed", "resolved"}
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 VERIFIER_ROLES = {"admin", "reporter", "officer"}
 
@@ -117,6 +119,12 @@ def _prune_hidden_comments(incident: models.Incident, current_user: Optional[mod
 def _assert_moderator(user: Optional[models.User]) -> models.User:
     if not user or user.role not in MODERATOR_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Moderator permissions required")
+    return user
+
+
+def _assert_approver(user: Optional[models.User]) -> models.User:
+    if not user or user.role not in APPROVER_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Approval role required")
     return user
 
 
@@ -699,3 +707,44 @@ def update_comment_visibility(
     db.refresh(comment)
     _populate_comment_metadata(comment, moderator)
     return comment
+
+
+@router.patch(
+    "/{incident_id}/status",
+    response_model=schemas.IncidentPublic,
+)
+def update_incident_status(
+    incident_id: int,
+    payload: schemas.IncidentStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    reviewer = _assert_approver(current_user)
+    desired = payload.status.strip()
+    if desired not in ALLOWED_STATUS_UPDATES:
+        raise HTTPException(status_code=400, detail="Unsupported status selection")
+    incident = (
+        db.query(models.Incident)
+        .options(
+            selectinload(models.Incident.reporter),
+            selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.comments).options(
+                selectinload(models.IncidentComment.user),
+                selectinload(models.IncidentComment.attachments),
+                selectinload(models.IncidentComment.reactions),
+            ),
+            selectinload(models.Incident.reactions),
+        )
+        .filter(models.Incident.id == incident_id)
+        .first()
+    )
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    incident.status = desired
+    incident.updated_at = _now_utc()
+    _apply_reward_progress(db, incident)
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    _populate_interaction_metadata(incident, reviewer)
+    return incident

@@ -302,6 +302,14 @@ class CommentModerationToggle(BaseModel):
     hidden: bool = Field(..., description="True to hide, False to restore visibility")
 
 
+class IncidentStatusUpdate(BaseModel):
+    status: constr(min_length=1, max_length=50)
+
+
+class UserRewardUpdate(BaseModel):
+    reward_points: int = Field(..., ge=0, description="New reward point balance")
+
+
 class TaxonomyGroup(BaseModel):
     label: str
     items: List[str]

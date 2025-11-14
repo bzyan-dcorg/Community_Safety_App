@@ -182,3 +182,32 @@ export async function setCommentVisibility(incidentId, commentId, hidden) {
   );
   return resp.data;
 }
+
+export async function updateIncidentStatus(id, status) {
+  const resp = await apiClient.patch(
+    `/incidents/${id}/status`,
+    { status },
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+  return resp.data;
+}
+
+export async function searchUsers(params = {}) {
+  const resp = await apiClient.get("/users/", {
+    params: sanitizeParams(params),
+  });
+  return resp.data;
+}
+
+export async function updateUserRewards(userId, rewardPoints) {
+  const resp = await apiClient.patch(
+    `/users/${userId}/rewards`,
+    { reward_points: rewardPoints },
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+  return resp.data;
+}

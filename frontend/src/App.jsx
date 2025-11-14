@@ -7,6 +7,7 @@ import AuthModal from "./components/AuthModal.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import UserDashboardModal from "./components/UserDashboardModal.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
+import IncidentApprovals from "./components/IncidentApprovals.jsx";
 import { fetchStats, fetchTaxonomy } from "./api.js";
 import { useAuth } from "./context/AuthContext.jsx";
 
@@ -91,6 +92,9 @@ export default function App() {
     ];
   }, [taxonomy]);
 
+  const showAdminPanel = user?.role === "admin";
+  const showApproverPanel = user && !["admin", "resident"].includes(user.role);
+
   return (
     <div className="min-h-screen bg-mist text-ink">
       <div className="relative overflow-hidden">
@@ -164,7 +168,8 @@ export default function App() {
           </div>
         </header>
 
-        {user?.role === "admin" ? <AdminPanel /> : null}
+        {showAdminPanel ? <AdminPanel /> : null}
+        {showApproverPanel ? <IncidentApprovals /> : null}
 
         <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-16 xs:px-6 sm:px-8 lg:px-10">
           <section className="grid gap-6 lg:grid-cols-[minmax(0,_2fr)_minmax(0,_3fr)]">
