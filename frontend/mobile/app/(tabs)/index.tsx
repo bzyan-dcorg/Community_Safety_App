@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +19,14 @@ import {
   fetchIncidents,
   fetchStats,
   getApiBaseUrl,
-  loginUser,
-  registerUser,
   resetApiBaseUrl,
   setApiBaseUrl as overrideApiBaseUrl,
 } from '@/utils/api';
+import { useAuth } from '@/context/AuthContext';
+import { IncidentDetailSheet } from '@/components/IncidentDetailSheet';
+import { IncidentFormSheet } from '@/components/IncidentFormSheet';
+import { IncidentApprovalsPanel } from '@/components/IncidentApprovalsPanel';
+import { AdminManagementPanel } from '@/components/AdminManagementPanel';
 
 const MODES = [
   { id: 'login', label: 'Sign in' },
@@ -73,6 +77,9 @@ const formatTime = (value: string) => {
 };
 
 export default function HomeScreen() {
+  const { authenticated, initializing: authInitializing, user, login, register, logout } = useAuth();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ incidentId?: string }>();
   const [apiBaseUrl, setApiBaseUrlState] = useState(getApiBaseUrl());
   const [showAuthPreview, setShowAuthPreview] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -91,6 +98,9 @@ export default function HomeScreen() {
   const [incidents, setIncidents] = useState<IncidentPreview[]>([]);
   const [incidentsLoading, setIncidentsLoading] = useState(false);
   const [incidentsError, setIncidentsError] = useState('');
+  const [selectedIncidentId, setSelectedIncidentId] = useState<number | null>(null);
+  const [showIncidentDetail, setShowIncidentDetail] = useState(false);
+  const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [pendingApiBase, setPendingApiBase] = useState(apiBaseUrl);
   const [apiConfigError, setApiConfigError] = useState('');
@@ -113,6 +123,9 @@ export default function HomeScreen() {
   };
 
   const openAuthPreview = (selectedMode: 'login' | 'register') => {
+    if (authenticated) {
+      return;
+    }
     setShowApiConfig(false);
     setMode(selectedMode);
     setShowAuthPreview(true);
@@ -171,7 +184,7 @@ export default function HomeScreen() {
     setIncidentsLoading(true);
     setIncidentsError('');
     try {
-      const payload = await fetchIncidents(5);
+      const payload = await fetchIncidents({ limit: 20 });
       setIncidents(payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load incidents';
@@ -185,6 +198,16 @@ export default function HomeScreen() {
     loadStats();
     loadIncidents();
   }, [loadStats, loadIncidents]);
+
+  useEffect(() => {
+    if (params.incidentId) {
+      const idNum = Number(params.incidentId);
+      if (!Number.isNaN(idNum)) {
+        handleIncidentPress(idNum);
+        router.setParams({ incidentId: undefined });
+      }
+    }
+  }, [params.incidentId, router, handleIncidentPress]);
 
   const snapshotCards = useMemo(() => {
     if (!stats) {
@@ -212,6 +235,24 @@ export default function HomeScreen() {
     ];
   }, [stats]);
 
+  const handleIncidentPress = useCallback((incidentId: number) => {
+    setSelectedIncidentId(incidentId);
+    setShowIncidentDetail(true);
+  }, []);
+
+  const handleIncidentMutated = useCallback(() => {
+    loadIncidents();
+    loadStats();
+  }, [loadIncidents, loadStats]);
+
+  const handleOpenForm = () => {
+    if (!authenticated) {
+      openAuthPreview('login');
+      return;
+    }
+    setShowIncidentForm(true);
+  };
+
   const canSubmit = useMemo(() => {
     if (!email.trim() || password.trim().length < 8) {
       return false;
@@ -234,22 +275,20 @@ export default function HomeScreen() {
     setAuthError('');
     try {
       if (mode === 'login') {
-        await loginUser({
+        await login({
           email: trimmedEmail,
           password: trimmedPassword,
           role,
           ...(justification ? { role_justification: justification } : {}),
         });
-        Alert.alert('Signed in', 'Session issued by the FastAPI backend. Token handling is still in progress on mobile.');
       } else {
-        await registerUser({
+        await register({
           email: trimmedEmail,
           password: trimmedPassword,
           display_name: displayName.trim(),
           role,
           ...(justification ? { role_justification: justification } : {}),
         });
-        Alert.alert('Account created', 'You can now sign in on the web or mobile preview.');
       }
       closeAuthPreview();
     } catch (error) {
@@ -260,7 +299,7 @@ export default function HomeScreen() {
     }
   };
 
-  const communityPreview = incidents.slice(0, 3);
+  const communityPreview = incidents;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -272,14 +311,28 @@ export default function HomeScreen() {
           <Text style={styles.heroSubtitle}>
             Blend resident reports, agency confirmations, and newsroom requests into one live feed your city can trust.
           </Text>
-          <View style={styles.heroActions}>
-            <Pressable style={styles.heroPrimaryCta} onPress={() => openAuthPreview('login')}>
-              <Text style={styles.heroPrimaryCtaLabel}>Sign in</Text>
-            </Pressable>
-            <Pressable style={styles.heroGhostCta} onPress={() => openAuthPreview('register')}>
-              <Text style={styles.heroGhostCtaLabel}>Create account</Text>
-            </Pressable>
-          </View>
+          {authenticated ? (
+            <View style={styles.heroAuthSummary}>
+              <View>
+                <Text style={styles.heroSummaryName}>{user?.display_name || user?.email || 'Signed in'}</Text>
+                <Text style={styles.heroSummaryMeta}>
+                  {user?.role ? formatLabel(user.role) : 'Role unknown'} · {user?.membership_tier || 'Member'}
+                </Text>
+              </View>
+              <Pressable style={styles.heroGhostCta} onPress={() => logout()}>
+                <Text style={styles.heroGhostCtaLabel}>Sign out</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.heroActions}>
+              <Pressable style={styles.heroPrimaryCta} onPress={() => openAuthPreview('login')} disabled={authInitializing}>
+                <Text style={styles.heroPrimaryCtaLabel}>{authInitializing ? 'Loading…' : 'Sign in'}</Text>
+              </Pressable>
+              <Pressable style={styles.heroGhostCta} onPress={() => openAuthPreview('register')} disabled={authInitializing}>
+                <Text style={styles.heroGhostCtaLabel}>Create account</Text>
+              </Pressable>
+            </View>
+          )}
           <View style={styles.heroMetaRow}>
             <View style={styles.heroMetaPill}>
               <Text style={styles.heroMetaText}>Live beta</Text>
@@ -288,6 +341,11 @@ export default function HomeScreen() {
               <Text style={styles.heroMetaSecondary}>API: {apiBaseUrl}</Text>
             </Pressable>
           </View>
+          {authenticated ? (
+            <Pressable style={styles.reportButton} onPress={handleOpenForm}>
+              <Text style={styles.reportButtonLabel}>Report incident</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.sectionCard}>
@@ -335,7 +393,7 @@ export default function HomeScreen() {
             <Text style={styles.errorLabel}>No incidents yet. Submit one from the web dashboard.</Text>
           ) : (
             communityPreview.map((item) => (
-              <Pressable key={item.id} style={styles.communityItem}>
+              <Pressable key={item.id} style={styles.communityItem} onPress={() => handleIncidentPress(item.id)}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.communityBadge}>{formatLabel(item.incident_type)}</Text>
                   <Text style={styles.communityTitle}>{item.category || 'General incident'}</Text>
@@ -354,6 +412,9 @@ export default function HomeScreen() {
             <Text style={styles.secondaryButtonLabel}>Refresh feed</Text>
           </Pressable>
         </View>
+
+        {user?.role && user.role !== 'admin' && user.role !== 'resident' ? <IncidentApprovalsPanel /> : null}
+        {user?.role === 'admin' ? <AdminManagementPanel /> : null}
       </ScrollView>
 
       {showAuthPreview && (
@@ -532,6 +593,19 @@ export default function HomeScreen() {
           </View>
         </View>
       )}
+
+      <IncidentDetailSheet
+        incidentId={selectedIncidentId}
+        visible={showIncidentDetail}
+        onClose={() => setShowIncidentDetail(false)}
+        onMutated={handleIncidentMutated}
+        onRequireAuth={() => openAuthPreview('login')}
+      />
+      <IncidentFormSheet
+        visible={showIncidentForm}
+        onClose={() => setShowIncidentForm(false)}
+        onCreated={handleIncidentMutated}
+      />
     </SafeAreaView>
   );
 }
@@ -601,10 +675,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 15,
   },
+  heroAuthSummary: {
+    marginTop: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(248,250,252,0.2)',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  heroSummaryName: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  heroSummaryMeta: {
+    color: '#cbd5f5',
+    fontSize: 12,
+    marginTop: 4,
+  },
   heroMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 18,
+  },
+  reportButton: {
+    marginTop: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(248,250,252,0.35)',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  reportButtonLabel: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '600',
   },
   heroMetaPill: {
     backgroundColor: 'rgba(248, 250, 252, 0.15)',

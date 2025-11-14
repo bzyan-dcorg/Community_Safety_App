@@ -58,3 +58,5 @@ Join our community of developers creating universal apps.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 
  admin@example.com demo@civicsafety.com Password123!
+
+ npx expo start for mobile
