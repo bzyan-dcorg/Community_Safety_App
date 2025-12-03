@@ -84,6 +84,7 @@ export type Incident = IncidentPreview & {
     contacted_authorities: string | null;
     feel_safe_now: boolean | null;
     safety_sentiment: string | null;
+    created_by: string | null;
     created_at: string;
   }>;
   comments: Array<IncidentComment>;
@@ -314,6 +315,24 @@ export function createIncident(payload: {
 
 export function createComment(incidentId: number, payload: { body: string; media?: CommentMediaPayload[] }) {
   return request<IncidentComment>(`/incidents/${incidentId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createFollowUp(
+  incidentId: number,
+  payload: {
+    status: string;
+    notes?: string;
+    still_happening?: boolean | null;
+    contacted_authorities?: string | null;
+    feel_safe_now?: boolean | null;
+    safety_sentiment?: string | null;
+    created_by?: string;
+  },
+) {
+  return request(`/incidents/${incidentId}/follow-ups`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

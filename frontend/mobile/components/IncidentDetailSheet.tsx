@@ -19,6 +19,7 @@ import {
   Incident,
   IncidentComment,
   createComment,
+  createFollowUp,
   fetchIncident,
   setCommentReaction,
   setIncidentReaction,
@@ -47,6 +48,24 @@ const STATUS_OPTIONS = [
 ];
 const COMMENT_MEDIA_LIMIT = 3;
 const DEFAULT_ZOOM_DELTA = 0.01;
+const CONTACT_OPTIONS = [
+  { id: 'unknown', label: 'Not shared' },
+  { id: 'none', label: 'No' },
+  { id: 'service-request', label: 'Service request' },
+  { id: '911', label: '911' },
+  { id: 'not-needed', label: 'Not needed' },
+];
+const SENTIMENT_OPTIONS = [
+  { id: 'safe', label: 'Safe' },
+  { id: 'uneasy', label: 'Uneasy' },
+  { id: 'unsafe', label: 'Unsafe' },
+  { id: 'unsure', label: 'Unsure' },
+];
+const PROMPT_CHOICES: Array<{ id: boolean | null; label: string }> = [
+  { id: true, label: 'Yes' },
+  { id: false, label: 'No' },
+  { id: null, label: 'Unsure' },
+];
 
 type CommentMediaDraft = {
   id: string;
@@ -70,6 +89,22 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
   const [mapExpanded, setMapExpanded] = useState(false);
   const [commentMedia, setCommentMedia] = useState<CommentMediaDraft[]>([]);
   const [commentMediaError, setCommentMediaError] = useState('');
+  const [followStatus, setFollowStatus] = useState('unverified');
+  const [followStillHappening, setFollowStillHappening] = useState<boolean | null>(null);
+  const [followFeelSafe, setFollowFeelSafe] = useState<boolean | null>(null);
+  const [followContacted, setFollowContacted] = useState('unknown');
+  const [followSentiment, setFollowSentiment] = useState('unsure');
+  const [followAlias, setFollowAlias] = useState('');
+  const [followNotes, setFollowNotes] = useState('');
+  const [followComposerOpen, setFollowComposerOpen] = useState(false);
+  const [followSubmitting, setFollowSubmitting] = useState(false);
+  const [followError, setFollowError] = useState('');
+
+  const derivedAlias = useMemo(() => {
+    if (user?.display_name) return user.display_name;
+    if (user?.email) return user.email.split('@')[0];
+    return 'Community member';
+  }, [user?.display_name, user?.email]);
 
   const canModerate = useMemo(() => (user?.role ? MODERATOR_ROLES.has(user.role) : false), [user?.role]);
   const canApprove = useMemo(() => (user?.role ? APPROVER_ROLES.has(user.role) : false), [user?.role]);
@@ -122,6 +157,35 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
       setMapExpanded(false);
     }
   }, [mapRegion]);
+
+  useEffect(() => {
+    setFollowComposerOpen(false);
+    setFollowNotes('');
+    setFollowError('');
+  }, [incidentId]);
+
+  useEffect(() => {
+    if (!incident) {
+      return;
+    }
+    setFollowStatus(incident.status || 'unverified');
+    setFollowStillHappening(incident.still_happening);
+    setFollowFeelSafe(incident.feel_safe_now);
+    setFollowContacted(incident.contacted_authorities || 'unknown');
+    setFollowSentiment(incident.safety_sentiment || 'unsure');
+  }, [incident]);
+
+  useEffect(() => {
+    if (!followComposerOpen) {
+      setFollowAlias(derivedAlias);
+    }
+  }, [derivedAlias, followComposerOpen]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setFollowComposerOpen(false);
+    }
+  }, [authenticated]);
 
   const formatTimestamp = useCallback((value?: string | null) => {
     if (!value) return '';
@@ -341,6 +405,46 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
     }
   };
 
+  const handleFollowComposerToggle = () => {
+    if (!authenticated) {
+      onRequireAuth?.();
+      return;
+    }
+    setFollowError('');
+    setFollowComposerOpen((prev) => !prev);
+  };
+
+  const handleFollowUpSubmit = async () => {
+    if (!incident || !incidentId) return;
+    if (!authenticated) {
+      onRequireAuth?.();
+      return;
+    }
+    setFollowSubmitting(true);
+    setFollowError('');
+    try {
+      await createFollowUp(incidentId, {
+        status: followStatus,
+        notes: followNotes.trim() || undefined,
+        still_happening: followStillHappening,
+        contacted_authorities: followContacted,
+        feel_safe_now: followFeelSafe,
+        safety_sentiment: followSentiment,
+        created_by: followAlias.trim() || undefined,
+      });
+      setFollowNotes('');
+      setFollowComposerOpen(false);
+      const refreshed = await fetchIncident(incidentId);
+      setIncident(refreshed);
+      onMutated?.();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to record follow-up.';
+      setFollowError(message);
+    } finally {
+      setFollowSubmitting(false);
+    }
+  };
+
   if (!visible) {
     return null;
   }
@@ -452,6 +556,186 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
                 onPress={() => handleReaction(incident.viewer_reaction === 'unlike' ? 'clear' : 'unlike')}>
                 <Text style={styles.reactionLabel}>👎 {incident.unlikes_count}</Text>
               </Pressable>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.followHeaderRow}>
+                <Text style={styles.sectionTitle}>Follow-ups</Text>
+                {incident.follow_up_due_at ? (
+                  <Text style={styles.followDueLabel}>Next check-in {formatTimestamp(incident.follow_up_due_at)}</Text>
+                ) : null}
+              </View>
+              {incident.follow_ups.length === 0 ? (
+                <Text style={styles.metaText}>No follow-ups yet. Share what changed.</Text>
+              ) : (
+                incident.follow_ups.map((entry) => {
+                  const promptChips: JSX.Element[] = [];
+                  if (typeof entry.still_happening === 'boolean') {
+                    promptChips.push(
+                      <Text key="ongoing" style={styles.followPromptChip}>
+                        Ongoing: {entry.still_happening ? 'Yes' : 'No'}
+                      </Text>,
+                    );
+                  }
+                  if (typeof entry.feel_safe_now === 'boolean') {
+                    promptChips.push(
+                      <Text key="feel" style={styles.followPromptChip}>
+                        Feels safe: {entry.feel_safe_now ? 'Yes' : 'No'}
+                      </Text>,
+                    );
+                  }
+                  if (entry.contacted_authorities) {
+                    promptChips.push(
+                      <Text key="contact" style={styles.followPromptChip}>
+                        Authorities: {entry.contacted_authorities.replace(/-/g, ' ')}
+                      </Text>,
+                    );
+                  }
+                  if (entry.safety_sentiment) {
+                    promptChips.push(
+                      <Text key="sentiment" style={styles.followPromptChip}>
+                        Sentiment: {entry.safety_sentiment.replace(/-/g, ' ')}
+                      </Text>,
+                    );
+                  }
+                  return (
+                    <View key={entry.id} style={styles.followCard}>
+                      <View style={styles.followCardHeader}>
+                        <Text style={styles.followCardTitle}>{entry.created_by || 'Community follow-up'}</Text>
+                        <Text style={styles.followCardTimestamp}>{formatTimestamp(entry.created_at)}</Text>
+                      </View>
+                      <Text style={styles.followCardStatus}>{entry.status.replace(/-/g, ' ')}</Text>
+                      {entry.notes ? <Text style={styles.followCardNotes}>{entry.notes}</Text> : null}
+                      {promptChips.length ? <View style={styles.followPromptRow}>{promptChips}</View> : null}
+                    </View>
+                  );
+                })
+              )}
+              {followComposerOpen ? (
+                <>
+                  <View style={styles.followComposer}>
+                    <Text style={styles.followControlLabel}>Status</Text>
+                    <View style={styles.followChipRow}>
+                      {STATUS_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.id}
+                          style={[styles.followChip, followStatus === option.id && styles.followChipActive]}
+                          onPress={() => setFollowStatus(option.id)}>
+                          <Text
+                            style={[styles.followChipLabel, followStatus === option.id && styles.followChipLabelActive]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.followControlLabel}>Is it still happening?</Text>
+                    <View style={styles.followChipRow}>
+                      {PROMPT_CHOICES.map((option) => (
+                        <Pressable
+                          key={`ongoing-${option.id}`}
+                          style={[styles.followChip, followStillHappening === option.id && styles.followChipActive]}
+                          onPress={() => setFollowStillHappening(option.id)}>
+                          <Text
+                            style={[
+                              styles.followChipLabel,
+                              followStillHappening === option.id && styles.followChipLabelActive,
+                            ]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.followControlLabel}>Do people feel safe now?</Text>
+                    <View style={styles.followChipRow}>
+                      {PROMPT_CHOICES.map((option) => (
+                        <Pressable
+                          key={`safe-${option.id}`}
+                          style={[styles.followChip, followFeelSafe === option.id && styles.followChipActive]}
+                          onPress={() => setFollowFeelSafe(option.id)}>
+                          <Text
+                            style={[
+                              styles.followChipLabel,
+                              followFeelSafe === option.id && styles.followChipLabelActive,
+                            ]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.followControlLabel}>Authorities contacted</Text>
+                    <View style={styles.followChipRow}>
+                      {CONTACT_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.id}
+                          style={[styles.followChip, followContacted === option.id && styles.followChipActive]}
+                          onPress={() => setFollowContacted(option.id)}>
+                          <Text
+                            style={[
+                              styles.followChipLabel,
+                              followContacted === option.id && styles.followChipLabelActive,
+                            ]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.followControlLabel}>Sentiment</Text>
+                    <View style={styles.followChipRow}>
+                      {SENTIMENT_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.id}
+                          style={[styles.followChip, followSentiment === option.id && styles.followChipActive]}
+                          onPress={() => setFollowSentiment(option.id)}>
+                          <Text
+                            style={[
+                              styles.followChipLabel,
+                              followSentiment === option.id && styles.followChipLabelActive,
+                            ]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.followControlLabel}>Notes</Text>
+                    <TextInput
+                      multiline
+                      value={followNotes}
+                      onChangeText={setFollowNotes}
+                      placeholder="Share what changed or what you observed…"
+                      placeholderTextColor="#94a3b8"
+                      style={styles.followTextarea}
+                    />
+                    <Text style={styles.followControlLabel}>Update by</Text>
+                    <TextInput
+                      value={followAlias}
+                      onChangeText={setFollowAlias}
+                      placeholder="Community member"
+                      placeholderTextColor="#94a3b8"
+                      style={styles.followInput}
+                    />
+                    <Pressable
+                      style={[styles.followSubmit, followSubmitting && styles.followSubmitDisabled]}
+                      onPress={handleFollowUpSubmit}
+                      disabled={followSubmitting}>
+                      <Text style={styles.followSubmitLabel}>{followSubmitting ? 'Saving…' : 'Save follow-up'}</Text>
+                    </Pressable>
+                  </View>
+                  <Pressable style={styles.followButtonMuted} onPress={handleFollowComposerToggle}>
+                    <Text style={styles.followButtonMutedLabel}>Cancel</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable style={styles.followButton} onPress={handleFollowComposerToggle}>
+                  <Text style={styles.followButtonLabel}>
+                    {authenticated ? 'Add follow-up' : 'Sign in to add follow-up'}
+                  </Text>
+                </Pressable>
+              )}
+              {followError ? <Text style={styles.errorLabel}>{followError}</Text> : null}
+              <Text style={styles.followHint}>
+                Neighbors can post follow-ups to keep the incident current. Staff and officers still verify and resolve
+                threads.
+              </Text>
             </View>
 
             <View style={styles.section}>
@@ -741,6 +1025,174 @@ const styles = StyleSheet.create({
   reactionLabel: {
     fontSize: 12,
     color: '#0f172a',
+  },
+  followHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  followDueLabel: {
+    fontSize: 11,
+    color: '#64748b',
+  },
+  followCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#f8fafc',
+  },
+  followCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  followCardTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  followCardTimestamp: {
+    fontSize: 11,
+    color: '#94a3b8',
+  },
+  followCardStatus: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0f172a',
+    textTransform: 'capitalize',
+  },
+  followCardNotes: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#475569',
+  },
+  followPromptRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  followPromptChip: {
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 10,
+    color: '#0f172a',
+  },
+  followComposer: {
+    marginTop: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    backgroundColor: '#fff',
+    gap: 10,
+  },
+  followControlLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  followChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  followChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  followChipActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  followChipLabel: {
+    fontSize: 11,
+    color: '#475569',
+  },
+  followChipLabelActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  followTextarea: {
+    minHeight: 70,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0f172a',
+  },
+  followInput: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0f172a',
+  },
+  followSubmit: {
+    marginTop: 4,
+    borderRadius: 999,
+    backgroundColor: '#0f172a',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  followSubmitDisabled: {
+    opacity: 0.6,
+  },
+  followSubmitLabel: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  followButton: {
+    marginTop: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#0f172a',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  followButtonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  followButtonMuted: {
+    marginTop: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  followButtonMutedLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  followHint: {
+    marginTop: 8,
+    fontSize: 11,
+    color: '#94a3b8',
+  },
+  errorLabel: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#b91c1c',
   },
   moderatorButton: {
     marginTop: 12,
