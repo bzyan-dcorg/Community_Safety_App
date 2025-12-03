@@ -11,6 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import MapView, { Marker, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -62,6 +64,25 @@ const DEFAULT_SNAPSHOT = [
   { label: 'Active follow-ups', value: '—', detail: 'Connect to backend' },
 ];
 
+const DEFAULT_MAP_REGION: Region = {
+  latitude: 38.9072,
+  longitude: -77.0369,
+  latitudeDelta: 0.08,
+  longitudeDelta: 0.08,
+};
+
+const INCIDENT_TYPE_META: Record<
+  string,
+  {
+    label: string;
+    color: string;
+  }
+> = {
+  community: { label: 'Community', color: '#0ea5e9' },
+  'public-order': { label: 'Public order', color: '#f97316' },
+  police: { label: 'Police', color: '#6366f1' },
+};
+
 const formatLabel = (value: string) =>
   value
     .split(/[-_]/)
@@ -104,6 +125,9 @@ export default function HomeScreen() {
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [pendingApiBase, setPendingApiBase] = useState(apiBaseUrl);
   const [apiConfigError, setApiConfigError] = useState('');
+  const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_MAP_REGION);
+  const [mapError, setMapError] = useState('');
+  const [mapLocating, setMapLocating] = useState(false);
 
   const roleRequiresJustification = role !== 'resident';
 
@@ -300,6 +324,38 @@ export default function HomeScreen() {
   };
 
   const communityPreview = incidents;
+  const incidentMarkers = useMemo(
+    () => incidents.filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number'),
+    [incidents],
+  );
+
+  const requestUserLocation = useCallback(async () => {
+    try {
+      setMapLocating(true);
+      setMapError('');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== Location.PermissionStatus.GRANTED) {
+        setMapError('启用定位权限以查看附近事件。');
+        return;
+      }
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setMapRegion((prev) => ({
+        ...prev,
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude,
+      }));
+    } catch (error) {
+      setMapError(error instanceof Error ? error.message : 'Unable to determine location.');
+    } finally {
+      setMapLocating(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    requestUserLocation().catch(() => {
+      // Swallow startup failures; user can retry via the locate button.
+    });
+  }, [requestUserLocation]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -346,6 +402,52 @@ export default function HomeScreen() {
               <Text style={styles.reportButtonLabel}>Report incident</Text>
             </Pressable>
           ) : null}
+        </View>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>Neighborhood map</Text>
+              <Text style={styles.sectionSubtitle}>Pins update as mapped incidents stream in</Text>
+            </View>
+            <Pressable style={styles.linkButton} onPress={requestUserLocation} disabled={mapLocating}>
+              <Text style={styles.linkButtonLabel}>{mapLocating ? '定位中…' : 'Locate me'}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.mapPreviewWrapper}>
+            <MapView
+              style={styles.mapPreview}
+              region={mapRegion}
+              onRegionChangeComplete={(region) => setMapRegion(region)}
+            >
+              {incidentMarkers.map((incident) => {
+                const meta = INCIDENT_TYPE_META[incident.incident_type] ?? INCIDENT_TYPE_META.community;
+                return (
+                  <Marker
+                    key={incident.id}
+                    coordinate={{ latitude: incident.lat as number, longitude: incident.lng as number }}
+                    pinColor={meta.color}
+                    title={incident.category || meta.label}
+                    description={incident.location_text || formatLabel(incident.status)}
+                    onCalloutPress={() => handleIncidentPress(incident.id)}
+                  />
+                );
+              })}
+            </MapView>
+          </View>
+          {incidentMarkers.length > 0 ? (
+            <View style={styles.legendRow}>
+              {Object.entries(INCIDENT_TYPE_META).map(([type, meta]) => (
+                <View key={type} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: meta.color }]} />
+                  <Text style={styles.legendLabel}>{meta.label}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.mapEmpty}>No mapped incidents yet — encourage reporters to drop a pin.</Text>
+          )}
+          {mapError ? <Text style={styles.errorLabel}>{mapError}</Text> : null}
         </View>
 
         <View style={styles.sectionCard}>
@@ -797,6 +899,44 @@ const styles = StyleSheet.create({
   signalDetail: {
     marginTop: 6,
     color: '#0f172a',
+    fontSize: 12,
+  },
+  mapPreviewWrapper: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  mapPreview: {
+    height: 220,
+    width: '100%',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+  },
+  legendLabel: {
+    fontSize: 12,
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  mapEmpty: {
+    color: '#94a3b8',
     fontSize: 12,
   },
   communityItem: {

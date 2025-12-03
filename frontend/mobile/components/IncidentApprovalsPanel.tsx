@@ -11,7 +11,7 @@ const STATUS_OPTIONS = [
   { id: 'unverified', label: 'Revert to unverified' },
 ];
 
-const APPROVER_ROLES = new Set(['staff', 'reporter', 'officer']);
+const APPROVER_ROLES = new Set(['staff', 'officer']);
 
 export function IncidentApprovalsPanel() {
   const { user } = useAuth();

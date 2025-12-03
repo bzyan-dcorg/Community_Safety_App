@@ -9,38 +9,21 @@ router = APIRouter(
 
 TAXONOMY = schemas.TaxonomyResponse(
     police_related=schemas.TaxonomyGroup(
-        label="Police-Related",
-        items=[
-            "Burglary",
-            "Theft From Auto",
-            "Non-Fatal Shooting",
-            "Homicide",
-            "Suspicious Vehicle",
-            "Suspicious Person",
-            "Robbery",
-        ],
+        label="City & Staff Sightings",
+        items=["Sightings of city workers"],
     ),
     community_civic=schemas.TaxonomyGroup(
-        label="Community & Civic",
+        label="Neighborhood Activities",
         items=[
-            "Package Theft",
-            "Mailbox Tampering",
-            "Noise / Neighborhood Dispute",
-            "Lost / Found Pet",
-            "Streetlight Outage",
-            "Pothole / Road Hazard",
-            "Sanitation / Illegal Dumping",
-            "Homelessness Encampment",
+            "Community activities or programs",
+            "Conflict mediation or disputes",
         ],
     ),
     public_order=schemas.TaxonomyGroup(
-        label="Public Order",
+        label="Safety Pulse",
         items=[
-            "Street Racing",
-            "Fireworks",
-            "Loud Gathering",
-            "Public Intoxication",
-            "Sidewalk Obstruction",
+            "Perceived safety shift",
+            "Public space or infrastructure watch",
         ],
     ),
 )

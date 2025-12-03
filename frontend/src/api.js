@@ -211,3 +211,36 @@ export async function updateUserRewards(userId, rewardPoints) {
   );
   return resp.data;
 }
+
+export async function fetchRewardPartners() {
+  const resp = await apiClient.get("/rewards/partners");
+  return resp.data;
+}
+
+export async function fetchRewardLedger(limit = 25) {
+  const resp = await apiClient.get("/rewards/ledger", {
+    params: { limit },
+  });
+  return resp.data;
+}
+
+export async function redeemReward(payload) {
+  const resp = await apiClient.post("/rewards/redeem", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+  return resp.data;
+}
+
+export async function fetchRewardRequests(params = {}) {
+  const resp = await apiClient.get("/rewards/requests", {
+    params: sanitizeParams(params),
+  });
+  return resp.data;
+}
+
+export async function decideRewardRedemption(id, data) {
+  const resp = await apiClient.post(`/rewards/requests/${id}/decision`, data, {
+    headers: { "Content-Type": "application/json" },
+  });
+  return resp.data;
+}

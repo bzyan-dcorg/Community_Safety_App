@@ -3,6 +3,7 @@ import IncidentForm from "./components/IncidentForm.jsx";
 import IncidentList from "./components/IncidentList.jsx";
 import StatsOverview from "./components/StatsOverview.jsx";
 import SentimentPulse from "./components/SentimentPulse.jsx";
+import IncidentMapOverview from "./components/IncidentMapOverview.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import UserDashboardModal from "./components/UserDashboardModal.jsx";
@@ -180,6 +181,7 @@ export default function App() {
                 onRefresh={refreshStats}
               />
               <SentimentPulse stats={stats} categories={availableCategories} />
+              <IncidentMapOverview />
             </div>
 
             <div className="space-y-6">

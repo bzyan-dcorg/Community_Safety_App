@@ -111,6 +111,16 @@ Community Reputation: points/badges for high-quality reports.
 
 External Feeds: ingest official open data / RSS and normalize.
 
+## Map provider configuration
+
+The web dashboard loads Leaflet dynamically from a CDN. Some networks block `unpkg.com`, which leaves the map in a perpetual “Loading…” state. The loader now retries via `cdnjs` and `jsdelivr` automatically, and the UI surfaces a helpful error if every CDN is blocked. If you still can't reach those CDNs, set the following environment variables (see `frontend/.env.local.example`) to point at a tile service that is reachable from your region, for example a MapTiler or Mapbox style URL:
+
+- `VITE_MAP_TILE_URL`
+- `VITE_MAP_TILE_ATTRIBUTION`
+- `VITE_MAP_MAX_ZOOM`
+
+Google Maps JS and Apple MapKit JS require their official SDKs plus API tokens, so they cannot simply be dropped in as a tile layer. If you have those credentials, wire them up via a dedicated provider module and update the map components to use that SDK instead of Leaflet.
+
 
 ```
 community-safety-app/

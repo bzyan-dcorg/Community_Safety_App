@@ -17,6 +17,23 @@ STATUS_TARGETS = {
     "resolved": 25,
 }
 
+REWARD_PARTNERS: List[Dict[str, object]] = [
+    {
+        "id": "civic-coffee",
+        "name": "Civic Coffee Cooperative",
+        "description": "Redeem a latte or pastry while you share updates with neighbors.",
+        "points_cost": 75,
+        "fulfillment": "Manual pickup. Staff emails you a same-day voucher.",
+    },
+    {
+        "id": "market-supper-club",
+        "name": "Market Street Supper Club",
+        "description": "Get $10 off a family-style meal when you help verify a thread.",
+        "points_cost": 150,
+        "fulfillment": "Show the confirmation email to the host to apply the discount.",
+    },
+]
+
 
 def determine_membership_tier(points: Optional[int]) -> str:
     """Return the tier label that corresponds to the provided point balance."""
@@ -69,3 +86,16 @@ def reward_target_for_status(status: Optional[str], credibility_score: Optional[
     score = credibility_score or 0.0
     bonus = 5 if score >= 0.65 else 0
     return base + bonus
+
+
+def list_reward_partners() -> List[Dict[str, object]]:
+    """Return the configured merchant partners."""
+    return list(REWARD_PARTNERS)
+
+
+def get_reward_partner(partner_id: str) -> Optional[Dict[str, object]]:
+    """Find a reward partner by id."""
+    for partner in REWARD_PARTNERS:
+        if partner["id"] == partner_id:
+            return partner
+    return None

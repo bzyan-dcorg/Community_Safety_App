@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchIncidents, updateIncidentStatus } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -8,10 +8,11 @@ const APPROVAL_STATUSES = [
   { id: "resolved", label: "Resolved" },
   { id: "unverified", label: "Revert to Unverified" },
 ];
+const APPROVER_ROLES = new Set(["officer", "staff", "admin"]);
 
 export default function IncidentApprovals() {
   const { user } = useAuth();
-  const canApprove = user && !["admin", "resident"].includes(user.role);
+  const canApprove = useMemo(() => (user?.role ? APPROVER_ROLES.has(user.role) : false), [user?.role]);
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

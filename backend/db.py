@@ -31,6 +31,27 @@ def _sqlite_has_column(connection, table_name: str, column_name: str) -> bool:
     return any(row[1] == column_name for row in rows)
 
 
+def _seed_reward_ledger_if_empty(connection) -> None:
+    try:
+        ledger_count = connection.execute(text("SELECT COUNT(1) FROM reward_ledger")).scalar()
+    except Exception:
+        return
+    if ledger_count and ledger_count > 0:
+        return
+
+    rows = connection.execute(
+        text("SELECT id, reward_points FROM users WHERE reward_points IS NOT NULL AND reward_points > 0")
+    ).fetchall()
+    for user_id, reward_points in rows:
+        connection.execute(
+            text(
+                "INSERT INTO reward_ledger (user_id, delta, source, description, status) "
+                "VALUES (:user_id, :delta, 'balance-forward', 'Existing balance snapshot', 'posted')"
+            ),
+            {"user_id": user_id, "delta": reward_points},
+        )
+
+
 VALID_CONTACTED_AUTHORITIES = {"unknown", "none", "service-request", "911", "not-needed"}
 VALID_SAFETY_SENTIMENTS = {"safe", "uneasy", "unsafe", "unsure"}
 CONTACTED_FALLBACKS = {
@@ -129,3 +150,4 @@ def ensure_sqlite_schema():
             SENTIMENT_FALLBACKS,
             None,
         )
+        _seed_reward_ledger_if_empty(connection)

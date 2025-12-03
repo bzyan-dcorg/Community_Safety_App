@@ -57,12 +57,18 @@ class IncidentBase(BaseModel):
 
 
 class IncidentCreate(IncidentBase):
-    pass
+    media: List["IncidentMediaPayload"] = Field(
+        default_factory=list,
+        description="Optional media attachments to seed the thread",
+    )
 
 
 class IncidentUpdate(BaseModel):
     category: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=2000)
+    location_text: Optional[str] = Field(None, max_length=255)
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     incident_type: Optional[IncidentType] = None
     still_happening: Optional[bool] = None
     feel_safe_now: Optional[bool] = None
@@ -242,11 +248,27 @@ class IncidentReactionStatus(BaseModel):
     viewer_reaction: Optional[Literal["like", "unlike"]] = None
 
 
-class IncidentCommentMediaBase(BaseModel):
+class MediaPayloadBase(BaseModel):
     media_type: Literal["image", "video"]
     content_type: Optional[str] = None
     data_base64: str = Field(..., description="Base64 encoded media payload")
     filename: Optional[str] = Field(None, max_length=255)
+
+
+class IncidentMediaPayload(MediaPayloadBase):
+    pass
+
+
+class IncidentMediaPublic(MediaPayloadBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IncidentCommentMediaBase(MediaPayloadBase):
+    pass
 
 
 class IncidentCommentMediaCreate(IncidentCommentMediaBase):
@@ -273,6 +295,7 @@ class IncidentPublic(IncidentBase):
     updated_at: Optional[datetime] = None
     follow_ups: List[IncidentFollowUpPublic] = Field(default_factory=list)
     comments: List[IncidentCommentPublic] = Field(default_factory=list)
+    media: List[IncidentMediaPublic] = Field(default_factory=list)
     likes_count: int = 0
     unlikes_count: int = 0
     viewer_reaction: Optional[Literal["like", "unlike"]] = None
@@ -349,7 +372,45 @@ class UserOverview(BaseModel):
     rewards: UserRewardSummary
     recent_posts: List[UserPostBrief]
     unread_notifications: int = 0
+    ledger: List["RewardLedgerEntryPublic"] = Field(default_factory=list)
+
+
+class RewardLedgerEntryPublic(BaseModel):
+    id: int
+    delta: int
+    source: str
+    description: str
+    partner_id: Optional[str] = None
+    partner_name: Optional[str] = None
+    status: Literal["posted", "pending", "fulfilled", "cancelled"]
+    created_at: datetime
+    user: Optional[UserSummary] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RewardPartner(BaseModel):
+    id: str
+    name: str
+    description: str
+    points_cost: int
+    fulfillment: str
+
+
+class RewardRedemptionRequest(BaseModel):
+    partner_id: str
+    quantity: int = Field(1, ge=1, le=5, description="How many perks to redeem at once")
+    notes: Optional[constr(max_length=300)] = None
+
+
+class RewardRedemptionDecision(BaseModel):
+    action: Literal["fulfill", "cancel"]
+    note: Optional[constr(max_length=300)] = None
 
 
 IncidentCommentCreate.model_rebuild()
 IncidentCommentPublic.model_rebuild()
+IncidentPublic.model_rebuild()
+UserOverview.model_rebuild()
+RewardLedgerEntryPublic.model_rebuild()

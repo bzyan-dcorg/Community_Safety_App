@@ -75,6 +75,7 @@ export type Incident = IncidentPreview & {
   credibility_score: number;
   follow_up_due_at: string | null;
   updated_at: string | null;
+  media: IncidentMedia[];
   follow_ups: Array<{
     id: number;
     status: string;
@@ -98,6 +99,15 @@ export type Incident = IncidentPreview & {
   is_hidden?: boolean;
 };
 
+export type IncidentMedia = {
+  id: number;
+  media_type: 'image' | 'video';
+  content_type: string | null;
+  data_base64: string;
+  filename: string | null;
+  created_at: string;
+};
+
 export type IncidentComment = {
   id: number;
   body: string;
@@ -118,6 +128,13 @@ export type IncidentComment = {
   unlikes_count: number;
   viewer_reaction: 'like' | 'unlike' | null;
   is_hidden?: boolean;
+};
+
+export type CommentMediaPayload = {
+  media_type: 'image' | 'video';
+  content_type?: string | null;
+  data_base64: string;
+  filename?: string | null;
 };
 
 export type TaxonomyResponse = {
@@ -156,6 +173,26 @@ export type UserOverview = {
     reward_points_awarded: number;
   }>;
   unread_notifications: number;
+  ledger: RewardLedgerEntry[];
+};
+
+export type RewardLedgerEntry = {
+  id: number;
+  delta: number;
+  source: string;
+  description: string;
+  partner_id: string | null;
+  partner_name: string | null;
+  status: 'posted' | 'pending' | 'fulfilled' | 'cancelled';
+  created_at: string;
+};
+
+export type RewardPartner = {
+  id: string;
+  name: string;
+  description: string;
+  points_cost: number;
+  fulfillment: string;
 };
 
 export class ApiError extends Error {
@@ -222,6 +259,8 @@ export type IncidentPreview = {
   category: string;
   description: string;
   location_text: string | null;
+  lat: number | null;
+  lng: number | null;
   status: string;
   incident_type: string;
   still_happening: boolean | null;
@@ -258,6 +297,14 @@ export function createIncident(payload: {
   still_happening?: boolean | null;
   contacted_authorities?: string | null;
   safety_sentiment?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  media?: Array<{
+    media_type: 'image' | 'video';
+    content_type?: string | null;
+    data_base64: string;
+    filename?: string | null;
+  }>;
 }) {
   return request<Incident>('/incidents/', {
     method: 'POST',
@@ -265,7 +312,7 @@ export function createIncident(payload: {
   });
 }
 
-export function createComment(incidentId: number, payload: { body: string }) {
+export function createComment(incidentId: number, payload: { body: string; media?: CommentMediaPayload[] }) {
   return request<IncidentComment>(`/incidents/${incidentId}/comments`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -357,6 +404,17 @@ export function markNotificationRead(id: number) {
 
 export function fetchUserOverview() {
   return request<UserOverview>('/users/me/overview');
+}
+
+export function fetchRewardPartners() {
+  return request<RewardPartner[]>('/rewards/partners');
+}
+
+export function redeemReward(payload: { partner_id: string; quantity: number; notes?: string }) {
+  return request('/rewards/redeem', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function fetchRoleRequests(params: { status_filter?: string; limit?: number } = {}) {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createComment, createFollowUp, setCommentReaction, setIncidentReaction, updateIncident } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { IncidentMapPreview } from "./IncidentMapPreview.jsx";
 
 const STATUS_STYLES = {
   unverified: "bg-slate-200 text-slate-700",
@@ -14,6 +15,7 @@ const TYPE_STYLES = {
   police: "bg-indigo-100 text-indigo-700",
   "public-order": "bg-rose-100 text-rose-700",
 };
+const VERIFIER_ROLES = new Set(["admin", "staff", "officer"]);
 
 const CONTACT_OPTIONS = [
   { id: "unknown", label: "Not shared" },
@@ -162,6 +164,7 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
   });
   const [reactionLoading, setReactionLoading] = useState(false);
   const [reactionError, setReactionError] = useState("");
+  const canVerify = Boolean(user?.role && VERIFIER_ROLES.has(user.role));
 
   const credibilityPercent = useMemo(() => {
     if (typeof incident.credibility_score !== "number") return 0;
@@ -173,6 +176,11 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
   const followUpOverdue = followUpDue ? followUpDue.getTime() <= Date.now() : false;
   const reporterName = incident.reporter_alias || incident.reporter?.display_name || "Community member";
   const rewardPointsEarned = incident.reward_points_awarded || 0;
+  const hasMapPin = typeof incident.lat === "number" && typeof incident.lng === "number";
+  const mapLink = hasMapPin
+    ? `https://www.openstreetmap.org/?mlat=${incident.lat}&mlon=${incident.lng}#map=17/${incident.lat}/${incident.lng}`
+    : null;
+  const incidentMedia = incident.media || [];
 
   useEffect(() => {
     setFollowStatus(incident.status || "unverified");
@@ -197,6 +205,12 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
   useEffect(() => {
     setComments(incident.comments || []);
   }, [incident.comments]);
+
+  useEffect(() => {
+    if (!canVerify && showComposer) {
+      setShowComposer(false);
+    }
+  }, [canVerify, showComposer]);
 
   useEffect(() => {
     setReactionState({
@@ -335,6 +349,10 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
   }
 
   async function handleMarkResolved() {
+    if (!canVerify) {
+      onRequireAuth("login", "officer");
+      return;
+    }
     setActionLoading(true);
     setError("");
     setSuccess("");
@@ -355,6 +373,10 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
 
   async function handleFollowUpSubmit(event) {
     event.preventDefault();
+    if (!canVerify) {
+      onRequireAuth("login", "staff");
+      return;
+    }
     setComposeLoading(true);
     setError("");
     setSuccess("");
@@ -419,6 +441,48 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
               </span>
             )}
           </div>
+          {(hasMapPin || incidentMedia.length > 0) && (
+            <div className="mt-3 space-y-3">
+              {hasMapPin && (
+                <IncidentMapPreview
+                  lat={incident.lat}
+                  lng={incident.lng}
+                  locationText={incident.location_text}
+                  fallbackLink={mapLink}
+                />
+              )}
+
+              {incidentMedia.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                    Uploads
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {incidentMedia.map((media) => (
+                      <div
+                        key={media.id}
+                        className="h-20 w-20 overflow-hidden rounded-2xl border border-white/80 bg-slate-100 shadow-inner"
+                      >
+                        {media.media_type === "image" ? (
+                          <img
+                            src={`data:${media.content_type};base64,${media.data_base64}`}
+                            alt={media.filename || "Attachment"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <video
+                            src={`data:${media.content_type};base64,${media.data_base64}`}
+                            className="h-full w-full object-cover"
+                            controls
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="w-full md:w-56 md:max-w-xs">
@@ -441,19 +505,27 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
           </div>
 
           <div className="mt-3 flex flex-col gap-2 text-[11px]">
-            <button
-              onClick={() => setShowComposer((prev) => !prev)}
-              className="rounded-full border border-slate-200 px-3 py-2 font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
-            >
-              {showComposer ? "Cancel" : "Add follow-up"}
-            </button>
-            <button
-              onClick={handleMarkResolved}
-              disabled={actionLoading || incident.status === "resolved"}
-              className="rounded-full bg-ink px-3 py-2 font-medium text-white shadow-soft transition hover:bg-[#121420] disabled:opacity-50"
-            >
-              {actionLoading ? "Updating…" : "Mark resolved"}
-            </button>
+            {canVerify ? (
+              <>
+                <button
+                  onClick={() => setShowComposer((prev) => !prev)}
+                  className="rounded-full border border-slate-200 px-3 py-2 font-medium text-slate-600 transition hover:border-slate-400 hover:text-ink"
+                >
+                  {showComposer ? "Cancel" : "Add follow-up"}
+                </button>
+                <button
+                  onClick={handleMarkResolved}
+                  disabled={actionLoading || incident.status === "resolved"}
+                  className="rounded-full bg-ink px-3 py-2 font-medium text-white shadow-soft transition hover:bg-[#121420] disabled:opacity-50"
+                >
+                  {actionLoading ? "Updating…" : "Mark resolved"}
+                </button>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-2 text-slate-500">
+                Staff or officers can verify threads and record follow-ups.
+              </div>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -505,7 +577,7 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-600">{success}</div>
       )}
 
-      {showComposer && (
+      {canVerify && showComposer && (
         <form onSubmit={handleFollowUpSubmit} className="mt-6 space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-4 xs:p-5">
           <h4 className="text-sm font-semibold text-ink xs:text-base">Record a follow-up</h4>
           <Segmented value={followStatus} onChange={setFollowStatus} options={STATUS_OPTIONS} />

@@ -64,6 +64,12 @@ class Incident(Base):
         back_populates="incident",
         cascade="all, delete-orphan",
     )
+    media = relationship(
+        "IncidentMedia",
+        back_populates="incident",
+        cascade="all, delete-orphan",
+        order_by="IncidentMedia.created_at",
+    )
     reporter = relationship(
         "User",
         back_populates="reported_incidents",
@@ -115,6 +121,12 @@ class User(Base):
         back_populates="recipient",
         cascade="all, delete-orphan",
         order_by="Notification.created_at",
+    )
+    reward_ledger = relationship(
+        "RewardLedgerEntry",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="RewardLedgerEntry.created_at.desc()",
     )
     role_requests = relationship(
         "RoleRequest",
@@ -204,6 +216,20 @@ class IncidentCommentReaction(Base):
     user = relationship("User", back_populates="comment_reactions")
 
 
+class IncidentMedia(Base):
+    __tablename__ = "incident_media"
+
+    id = Column(Integer, primary_key=True, index=True)
+    incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=False, index=True)
+    media_type = Column(String(20), nullable=False)
+    content_type = Column(String(100), nullable=True)
+    data_base64 = Column(Text, nullable=False)
+    filename = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    incident = relationship("Incident", back_populates="media")
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -243,3 +269,19 @@ class RoleRequest(Base):
         foreign_keys=[reviewer_id],
         back_populates="reviewed_role_requests",
     )
+
+
+class RewardLedgerEntry(Base):
+    __tablename__ = "reward_ledger"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    delta = Column(Integer, nullable=False)
+    source = Column(String(50), nullable=False, default="manual")
+    description = Column(String(255), nullable=False)
+    partner_id = Column(String(50), nullable=True)
+    partner_name = Column(String(100), nullable=True)
+    status = Column(String(25), nullable=False, default="posted")  # posted | pending | fulfilled | cancelled
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    user = relationship("User", back_populates="reward_ledger")

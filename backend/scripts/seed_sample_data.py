@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from backend import models
 from backend.db import SessionLocal
+from backend.services.locations import apply_known_location_coordinates
 try:
     from backend.security import get_password_hash as _get_password_hash
 except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environments
@@ -110,6 +111,7 @@ def main() -> None:
         ),
         reporter_user_id=user.id,
       )
+      apply_known_location_coordinates(incident)
       db.add(incident)
       created += 1
 

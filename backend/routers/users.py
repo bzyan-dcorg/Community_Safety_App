@@ -8,6 +8,7 @@ from .. import models, schemas
 from ..db import get_db
 from ..security import get_current_user
 from ..services.rewards import tier_progress
+from ..services.ledger import record_reward_entry
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -98,6 +99,14 @@ def get_my_overview(
         or 0
     )
 
+    ledger_entries = (
+        db.query(models.RewardLedgerEntry)
+        .filter(models.RewardLedgerEntry.user_id == current_user.id)
+        .order_by(models.RewardLedgerEntry.created_at.desc())
+        .limit(15)
+        .all()
+    )
+
     progress = tier_progress(current_user.reward_points)
 
     rewards = schemas.UserRewardSummary(
@@ -115,6 +124,7 @@ def get_my_overview(
         rewards=rewards,
         recent_posts=_serialize_posts(incidents),
         unread_notifications=unread_notifications,
+        ledger=ledger_entries,
     )
 
 
@@ -147,8 +157,20 @@ def update_user_rewards(
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.reward_points = payload.reward_points
-    db.add(user)
+    current_points = int(user.reward_points or 0)
+    target_points = int(payload.reward_points)
+    delta = target_points - current_points
+    if delta != 0:
+        description = f"Admin adjustment → {target_points} pts"
+        record_reward_entry(
+            db,
+            user,
+            delta,
+            source="admin-adjustment",
+            description=description,
+        )
+    else:
+        db.add(user)
     db.commit()
     db.refresh(user)
     return user

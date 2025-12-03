@@ -1,27 +1,23 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createIncident } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import { MapLocationPicker } from "./MapLocationPicker.jsx";
 
 const DEFAULT_TAXONOMY = {
   community_civic: {
-    label: "Community & Civic",
-    items: [
-      "Package Theft",
-      "Noise / Neighborhood Dispute",
-      "Lost / Found Pet",
-      "Streetlight Outage",
-      "Sanitation / Illegal Dumping",
-    ],
+    label: "Neighborhood Activities",
+    items: ["Community activities or programs", "Conflict mediation or disputes"],
   },
   police_related: {
-    label: "Police-Related",
-    items: ["Burglary", "Robbery", "Suspicious Vehicle"],
+    label: "City & Staff Sightings",
+    items: ["Sightings of city workers"],
   },
   public_order: {
-    label: "Public Order",
-    items: ["Street Racing", "Fireworks"],
+    label: "Safety Pulse",
+    items: ["Perceived safety shift", "Public space or infrastructure watch"],
   },
 };
+const DEFAULT_CATEGORY = DEFAULT_TAXONOMY.community_civic.items[0];
 
 const INCIDENT_TYPES = [
   { id: "community", label: "Community / Civic" },
@@ -43,6 +39,45 @@ const SENTIMENT_OPTIONS = [
   { id: "unsafe", label: "Unsafe" },
   { id: "unsure", label: "Unsure" },
 ];
+
+const MAX_MEDIA_ATTACHMENTS = 3;
+
+function readFileAsPayload(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read file"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Invalid file result"));
+        return;
+      }
+      const [, base64] = reader.result.split(",", 2);
+      const isVideo = file.type.startsWith("video");
+      resolve({
+        id: `${file.name}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        media_type: isVideo ? "video" : "image",
+        content_type: file.type || (isVideo ? "video/mp4" : "image/jpeg"),
+        data_base64: base64 || reader.result,
+        filename: file.name,
+        previewUrl: reader.result,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function generateNearbyPrompts(lat, lng) {
+  if (typeof lat !== "number" || typeof lng !== "number") return [];
+  const roundedLat = lat.toFixed(3);
+  const roundedLng = lng.toFixed(3);
+  const quadrant = lat >= 0 ? "N" : "S";
+  const eastWest = lng >= 0 ? "E" : "W";
+  return [
+    `Did you notice city staff or contractors near ${roundedLat}°${quadrant} / ${roundedLng}°${eastWest}?`,
+    "Would additional lighting, traffic calming, or mediation help here?",
+    "Snap a quick photo so verifiers understand what equipment or crowd size they should expect.",
+  ];
+}
 
 function SegmentedControl({ label, value, onChange, options, allowUnset = true }) {
   return (
@@ -109,16 +144,20 @@ export default function IncidentForm({
   onRequireAuth = () => {},
 }) {
   const { authenticated, user } = useAuth();
-  const [category, setCategory] = useState("Package Theft");
+  const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [incidentType, setIncidentType] = useState("community");
   const [description, setDescription] = useState("");
   const [locationText, setLocationText] = useState("");
+  const [lat, setLat] = useState(null);
+  const [lng, setLng] = useState(null);
   const [stillHappeningChoice, setStillHappeningChoice] = useState("unset");
   const [policeSeenChoice, setPoliceSeenChoice] = useState("unset");
   const [feelSafeChoice, setFeelSafeChoice] = useState("unset");
   const [contactedAuthorities, setContactedAuthorities] = useState("unknown");
   const [safetySentiment, setSafetySentiment] = useState(null);
   const [alias, setAlias] = useState("");
+  const [mediaUploads, setMediaUploads] = useState([]);
+  const [mediaError, setMediaError] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
@@ -126,17 +165,73 @@ export default function IncidentForm({
 
   const taxonomyData = taxonomy || DEFAULT_TAXONOMY;
 
-  const categories = useMemo(() => {
-    return [
-      ...(taxonomyData?.community_civic?.items || []),
-      ...(taxonomyData?.public_order?.items || []),
-      ...(taxonomyData?.police_related?.items || []),
-    ];
+  const categoryGroups = useMemo(() => {
+    if (!taxonomyData) return [];
+    const groups = [];
+    if (taxonomyData?.police_related?.items?.length) {
+      groups.push({
+        label: taxonomyData.police_related.label,
+        items: taxonomyData.police_related.items,
+      });
+    }
+    if (taxonomyData?.community_civic?.items?.length) {
+      groups.push({
+        label: taxonomyData.community_civic.label,
+        items: taxonomyData.community_civic.items,
+      });
+    }
+    if (taxonomyData?.public_order?.items?.length) {
+      groups.push({
+        label: taxonomyData.public_order.label,
+        items: taxonomyData.public_order.items,
+      });
+    }
+    return groups;
   }, [taxonomyData]);
+
+  const categories = useMemo(() => {
+    return categoryGroups.flatMap((group) => group.items);
+  }, [categoryGroups]);
+
+  useEffect(() => {
+    if (categories.length === 0) {
+      return;
+    }
+    setCategory((prev) => (categories.includes(prev) ? prev : categories[0]));
+  }, [categories]);
 
   const structuredResponses = [stillHappeningChoice, policeSeenChoice, feelSafeChoice].filter(
     (value) => value !== "unset"
   ).length;
+
+  const nearbyPrompts = useMemo(() => generateNearbyPrompts(lat, lng), [lat, lng]);
+
+  async function handleMediaChange(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    setMediaError("");
+    try {
+      const availableSlots = MAX_MEDIA_ATTACHMENTS - mediaUploads.length;
+      if (availableSlots <= 0) {
+        setMediaError("You can attach up to three files.");
+        return;
+      }
+      const queue = files.slice(0, availableSlots);
+      const payloads = await Promise.all(queue.map((file) => readFileAsPayload(file)));
+      setMediaUploads((prev) => [...prev, ...payloads]);
+    } catch (error) {
+      console.error(error);
+      setMediaError("Unable to attach that file.");
+    } finally {
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
+  }
+
+  function handleRemoveMedia(id) {
+    setMediaUploads((prev) => prev.filter((item) => item.id !== id));
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -157,6 +252,8 @@ export default function IncidentForm({
         incident_type: incidentType,
         description,
         location_text: locationText,
+        lat: typeof lat === "number" ? lat : null,
+        lng: typeof lng === "number" ? lng : null,
         still_happening: normalizePrompt(stillHappeningChoice),
         police_seen: normalizePrompt(policeSeenChoice),
         feel_safe_now: normalizePrompt(feelSafeChoice),
@@ -164,18 +261,27 @@ export default function IncidentForm({
         safety_sentiment: safetySentiment,
         reporter_alias: aliasValue,
         status: "unverified",
+        media: mediaUploads.map((upload) => ({
+          media_type: upload.media_type,
+          content_type: upload.content_type,
+          data_base64: upload.data_base64,
+          filename: upload.filename,
+        })),
       };
 
       await createIncident(payload);
 
       setDescription("");
       setLocationText("");
+      setLat(null);
+      setLng(null);
       setStillHappeningChoice("unset");
       setPoliceSeenChoice("unset");
       setFeelSafeChoice("unset");
       setContactedAuthorities("unknown");
       setSafetySentiment(null);
       setAlias("");
+      setMediaUploads([]);
       setSuccess(true);
 
       if (onCreated) onCreated();
@@ -239,20 +345,32 @@ export default function IncidentForm({
 
       <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-slate-600">Category</label>
+          <label className="text-xs font-semibold text-slate-600" htmlFor="incident-category">
+            Category
+          </label>
           <select
+            id="incident-category"
             value={category}
             onChange={(event) => setCategory(event.target.value)}
             className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-inner focus:border-ink focus:outline-none"
           >
-            {Object.entries(taxonomyData).map(([key, group]) => (
-              <optgroup key={key} label={group.label}>
-                {(group.items || []).map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </optgroup>
-            ))}
+            {categoryGroups.length === 0 ? (
+              <option value={category || ""}>{category || "Select a category"}</option>
+            ) : (
+              categoryGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.items.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            )}
           </select>
+          <p className="text-[11px] text-slate-500">
+            Choose the closest match; share extra detail in the description.
+          </p>
         </div>
 
         <SegmentedControl
@@ -276,14 +394,32 @@ export default function IncidentForm({
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-slate-600">Where (block / landmark only)?</label>
-          <input
-            value={locationText}
-            onChange={(event) => setLocationText(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-inner focus:border-ink focus:outline-none"
-            placeholder="Near 14th &amp; U St NW"
+          <label className="text-xs font-semibold text-slate-600">Drop a map pin</label>
+          <MapLocationPicker
+            lat={lat}
+            lng={lng}
+            locationText={locationText}
+            onLocationTextChange={setLocationText}
+            onChange={({ lat: nextLat, lng: nextLng }) => {
+              setLat(nextLat);
+              setLng(nextLng);
+            }}
           />
         </div>
+
+        {nearbyPrompts.length > 0 && (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-600">
+            <p className="font-semibold text-ink">Nearby prompts</p>
+            <ul className="mt-2 space-y-1">
+              {nearbyPrompts.map((prompt, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="mt-0.5 text-slate-400">•</span>
+                  <span>{prompt}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="grid gap-4 rounded-3xl bg-white/60 p-4 xs:p-5 md:grid-cols-2">
           <PromptControl
@@ -316,6 +452,46 @@ export default function IncidentForm({
           onChange={setSafetySentiment}
           options={SENTIMENT_OPTIONS}
         />
+
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-600">Optional photo or short clip</label>
+          <input
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            onChange={handleMediaChange}
+            className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+          />
+          {mediaError && <p className="text-xs text-rose-600">{mediaError}</p>}
+          {mediaUploads.length > 0 && (
+            <div className="flex flex-wrap gap-3">
+              {mediaUploads.map((media) => (
+                <div
+                  key={media.id}
+                  className="relative h-20 w-20 overflow-hidden rounded-2xl border border-white/70 bg-slate-100 shadow-inner"
+                >
+                  {media.media_type === "image" ? (
+                    <img
+                      src={media.previewUrl}
+                      alt={media.filename}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <video src={media.previewUrl} className="h-full w-full object-cover" muted />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMedia(media.id)}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 px-1 text-[10px] font-semibold text-white"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-[11px] text-slate-500">Up to {MAX_MEDIA_ATTACHMENTS} files.</p>
+        </div>
 
         <div className="space-y-2">
           <label className="text-xs font-semibold text-slate-600">Alias (optional)</label>

@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models, schemas
 from ..db import get_db
 from ..security import get_current_user, optional_current_user
+from ..services.locations import apply_known_location_coordinates
 from ..services.rewards import reward_target_for_status
+from ..services.ledger import record_reward_entry
 
 router = APIRouter(
     prefix="/incidents",
@@ -19,10 +21,10 @@ FOLLOW_UP_INITIAL_MINUTES = 30
 FOLLOW_UP_EXTENDED_MINUTES = 120
 RESOLVED_STATUSES = {"official-confirmed", "resolved"}
 MODERATOR_ROLES = {"admin", "officer"}
-APPROVER_ROLES = {"staff", "reporter", "officer"}
+APPROVER_ROLES = {"admin", "staff", "officer"}
 ALLOWED_STATUS_UPDATES = {"unverified", "community-confirmed", "official-confirmed", "resolved"}
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-VERIFIER_ROLES = {"admin", "reporter", "officer"}
+VERIFIER_ROLES = {"admin", "staff", "officer"}
 
 
 def _model_dump(payload):
@@ -101,9 +103,25 @@ def _apply_reward_progress(db: Session, incident: models.Incident) -> None:
             return
         incident.reporter = reporter
 
-    reporter.reward_points = (reporter.reward_points or 0) + (target_points - already_awarded)
+    delta = target_points - already_awarded
+    if delta <= 0:
+        return
+
+    description = f"Incident #{incident.id} status → {incident.status}"
+    try:
+        record_reward_entry(
+            db,
+            reporter,
+            delta,
+            source="incident",
+            description=description,
+        )
+    except ValueError:
+        # If the ledger helper rejected the entry, skip credit updates for now
+        return
+
     incident.reward_points_awarded = target_points
-    db.add(reporter)
+    db.add(incident)
 
 
 def _can_view_hidden(user: Optional[models.User]) -> bool:
@@ -235,6 +253,7 @@ def list_incidents(
         .options(
             selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.media),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
                 selectinload(models.IncidentComment.attachments),
@@ -265,6 +284,7 @@ def list_incidents(
     incidents = q.limit(limit).all()
     for incident in incidents:
         _populate_interaction_metadata(incident, current_user)
+        apply_known_location_coordinates(incident)
 
     return incidents
 
@@ -348,6 +368,7 @@ def get_incident(
         .options(
             selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.media),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
                 selectinload(models.IncidentComment.attachments),
@@ -364,6 +385,7 @@ def get_incident(
     if incident.is_hidden and not can_view_hidden:
         raise HTTPException(status_code=404, detail="Incident not found")
     _populate_interaction_metadata(incident, current_user)
+    apply_known_location_coordinates(incident)
     return incident
 
 
@@ -407,8 +429,22 @@ def create_incident(
         credibility_score=credibility_score,
         reporter_user_id=current_user.id,
     )
+    apply_known_location_coordinates(row)
     db.add(row)
     db.flush()
+    for media in payload.media:
+        data = (media.data_base64 or "").strip()
+        if not data:
+            continue
+        db.add(
+            models.IncidentMedia(
+                incident_id=row.id,
+                media_type=media.media_type,
+                content_type=media.content_type,
+                data_base64=data,
+                filename=media.filename,
+            )
+        )
     row.reporter = current_user
     _notify_verifiers(db, row, current_user)
     db.commit()
@@ -424,7 +460,10 @@ def update_incident(
 ):
     incident = (
         db.query(models.Incident)
-        .options(selectinload(models.Incident.follow_ups))
+        .options(
+            selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.media),
+        )
         .filter(models.Incident.id == incident_id)
         .first()
     )
@@ -432,12 +471,21 @@ def update_incident(
         raise HTTPException(status_code=404, detail="Incident not found")
 
     update_data = _model_dump(payload)
+    if "location_text" in update_data:
+        if update_data["location_text"]:
+            cleaned = update_data["location_text"].strip()
+            if len(cleaned) > 255:
+                raise HTTPException(status_code=400, detail="location_text too long.")
+            update_data["location_text"] = cleaned or None
+        else:
+            update_data["location_text"] = None
     if "credibility_score" in update_data and update_data["credibility_score"] is not None:
         update_data["credibility_score"] = max(0.0, min(1.0, update_data["credibility_score"]))
 
     for field, value in update_data.items():
         setattr(incident, field, value)
 
+    apply_known_location_coordinates(incident)
     incident.updated_at = _now_utc()
     _apply_reward_progress(db, incident)
     db.add(incident)
@@ -654,6 +702,7 @@ def update_incident_visibility(
         .options(
             selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.media),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
                 selectinload(models.IncidentComment.attachments),
@@ -728,6 +777,7 @@ def update_incident_status(
         .options(
             selectinload(models.Incident.reporter),
             selectinload(models.Incident.follow_ups),
+            selectinload(models.Incident.media),
             selectinload(models.Incident.comments).options(
                 selectinload(models.IncidentComment.user),
                 selectinload(models.IncidentComment.attachments),

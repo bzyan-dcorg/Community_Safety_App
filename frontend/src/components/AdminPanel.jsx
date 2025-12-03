@@ -3,10 +3,12 @@ import {
   decideRoleRequest,
   fetchIncidents,
   fetchRoleRequests,
+  fetchRewardRequests,
   searchUsers,
   setCommentVisibility,
   setIncidentVisibility,
   updateUserRewards,
+  decideRewardRedemption,
 } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -38,6 +40,9 @@ export default function AdminPanel() {
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState("");
   const [rewardInputs, setRewardInputs] = useState({});
+  const [redemptionRequests, setRedemptionRequests] = useState([]);
+  const [redemptionLoading, setRedemptionLoading] = useState(false);
+  const [redemptionError, setRedemptionError] = useState("");
 
   const loadRequests = useCallback(async () => {
     if (!isAdmin) return;
@@ -69,12 +74,28 @@ export default function AdminPanel() {
     }
   }, [isAdmin]);
 
+  const loadRedemptions = useCallback(async () => {
+    if (!isAdmin) return;
+    setRedemptionLoading(true);
+    setRedemptionError("");
+    try {
+      const data = await fetchRewardRequests({ limit: 25 });
+      setRedemptionRequests(data);
+    } catch (error) {
+      console.error(error);
+      setRedemptionError("Unable to load redemption requests.");
+    } finally {
+      setRedemptionLoading(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     if (isAdmin) {
       loadRequests();
       loadIncidents();
+      loadRedemptions();
     }
-  }, [isAdmin, loadRequests, loadIncidents]);
+  }, [isAdmin, loadRequests, loadIncidents, loadRedemptions]);
 
   if (!isAdmin) {
     return null;
@@ -161,6 +182,17 @@ export default function AdminPanel() {
     }
   };
 
+  const handleRedemptionDecision = async (entryId, action) => {
+    setRedemptionError("");
+    try {
+      await decideRewardRedemption(entryId, { action });
+      await loadRedemptions();
+    } catch (error) {
+      console.error(error);
+      setRedemptionError("Unable to update redemption status.");
+    }
+  };
+
   return (
     <div className="mx-auto mb-8 flex max-w-7xl flex-col gap-4 px-4 xs:px-6 sm:px-8 lg:px-10">
       <div className="rounded-3xl bg-ink px-5 py-3 text-sm text-white shadow-lg sm:flex sm:items-center sm:justify-between">
@@ -211,6 +243,59 @@ export default function AdminPanel() {
                       {request.justification}
                     </p>
                   ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Manual Reward Redemptions" description="Approve or cancel pending perk requests.">
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-ink"
+              onClick={loadRedemptions}
+              disabled={redemptionLoading}
+            >
+              {redemptionLoading ? "Loading…" : "Refresh"}
+            </button>
+            {redemptionError && <span className="text-xs text-rose-600">{redemptionError}</span>}
+          </div>
+          {redemptionRequests.length === 0 ? (
+            <p className="text-sm text-slate-500">No pending redemptions.</p>
+          ) : (
+            <ul className="space-y-3">
+              {redemptionRequests.map((entry) => (
+                <li key={entry.id} className="rounded-2xl border border-slate-200 p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-ink">
+                        {entry.user?.display_name || entry.user?.email || "Resident"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {entry.partner_name || "Manual perk"} · Requested on{" "}
+                        {new Date(entry.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="rounded-full border border-emerald-500 px-3 py-1 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50"
+                        onClick={() => handleRedemptionDecision(entry.id, "fulfill")}
+                      >
+                        Fulfill
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full border border-rose-500 px-3 py-1 text-xs font-semibold text-rose-500 transition hover:bg-rose-50"
+                        onClick={() => handleRedemptionDecision(entry.id, "cancel")}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">{entry.description}</p>
+                  <p className="mt-1 text-xs text-slate-500">Points change: {entry.delta} pts</p>
                 </li>
               ))}
             </ul>
