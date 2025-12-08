@@ -6,6 +6,8 @@ cd frontend
 npm install
 npm run dev
 
+cd frontend/mobile
+npx expo start for mobile
 ## OAuth config
 
 1. Copy `.env.local.example` to `.env.local`.
