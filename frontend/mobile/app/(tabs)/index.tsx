@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -83,6 +84,33 @@ const INCIDENT_TYPE_META: Record<
   police: { label: 'Police', color: '#6366f1' },
 };
 
+const NEIGHBORHOOD_FOCUS_OPTIONS = [
+  {
+    id: 'downtown',
+    label: 'Downtown core',
+    latitude: 38.9035,
+    longitude: -77.033,
+    latitudeDelta: 0.035,
+    longitudeDelta: 0.035,
+  },
+  {
+    id: 'anacostia',
+    label: 'Anacostia',
+    latitude: 38.8625,
+    longitude: -76.9885,
+    latitudeDelta: 0.03,
+    longitudeDelta: 0.03,
+  },
+  {
+    id: 'petworth',
+    label: 'Petworth',
+    latitude: 38.9425,
+    longitude: -77.0277,
+    latitudeDelta: 0.03,
+    longitudeDelta: 0.03,
+  },
+];
+
 const formatLabel = (value: string) =>
   value
     .split(/[-_]/)
@@ -128,6 +156,8 @@ export default function HomeScreen() {
   const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_MAP_REGION);
   const [mapError, setMapError] = useState('');
   const [mapLocating, setMapLocating] = useState(false);
+  const [focusMapEnabled, setFocusMapEnabled] = useState(false);
+  const [focusNeighborhood, setFocusNeighborhood] = useState(NEIGHBORHOOD_FOCUS_OPTIONS[0].id);
 
   const roleRequiresJustification = role !== 'resident';
 
@@ -357,6 +387,22 @@ export default function HomeScreen() {
     });
   }, [requestUserLocation]);
 
+  useEffect(() => {
+    if (!focusMapEnabled) {
+      return;
+    }
+    const preset = NEIGHBORHOOD_FOCUS_OPTIONS.find((option) => option.id === focusNeighborhood);
+    if (!preset) {
+      return;
+    }
+    setMapRegion({
+      latitude: preset.latitude,
+      longitude: preset.longitude,
+      latitudeDelta: preset.latitudeDelta ?? DEFAULT_MAP_REGION.latitudeDelta,
+      longitudeDelta: preset.longitudeDelta ?? DEFAULT_MAP_REGION.longitudeDelta,
+    });
+  }, [focusMapEnabled, focusNeighborhood]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
@@ -434,6 +480,41 @@ export default function HomeScreen() {
                 );
               })}
             </MapView>
+          </View>
+          <View style={styles.focusCard}>
+            <View style={styles.focusToggleRow}>
+              <Switch value={focusMapEnabled} onValueChange={setFocusMapEnabled} />
+              <Text style={styles.focusToggleLabel}>Follow a specific neighborhood</Text>
+            </View>
+            <View style={styles.focusOptionsRow}>
+              {NEIGHBORHOOD_FOCUS_OPTIONS.map((option) => {
+                const selected = focusNeighborhood === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    style={[
+                      styles.focusOption,
+                      selected && styles.focusOptionActive,
+                      !focusMapEnabled && styles.focusOptionDisabled,
+                    ]}
+                    disabled={!focusMapEnabled}
+                    onPress={() => setFocusNeighborhood(option.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.focusOptionLabel,
+                        selected && styles.focusOptionLabelActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.focusHint}>
+              {focusMapEnabled ? 'Map centers on your selected community.' : 'Enable to quickly jump to a saved area.'}
+            </Text>
           </View>
           {incidentMarkers.length > 0 ? (
             <View style={styles.legendRow}>
@@ -910,6 +991,59 @@ const styles = StyleSheet.create({
   mapPreview: {
     height: 220,
     width: '100%',
+  },
+  focusCard: {
+    marginTop: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    backgroundColor: '#f8fafc',
+  },
+  focusToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  focusToggleLabel: {
+    marginLeft: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  focusOptionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  focusOption: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+    backgroundColor: '#fff',
+  },
+  focusOptionActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  focusOptionDisabled: {
+    opacity: 0.55,
+  },
+  focusOptionLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  focusOptionLabelActive: {
+    color: '#fff',
+  },
+  focusHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#64748b',
   },
   legendRow: {
     flexDirection: 'row',

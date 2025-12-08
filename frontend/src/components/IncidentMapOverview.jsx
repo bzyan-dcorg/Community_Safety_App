@@ -9,6 +9,12 @@ const DEFAULT_VIEW = {
   zoom: 12,
 };
 
+const NEIGHBORHOOD_PRESETS = [
+  { id: "downtown", label: "Downtown core", lat: 38.9035, lng: -77.033, zoom: 14 },
+  { id: "anacostia", label: "Anacostia", lat: 38.8625, lng: -76.9885, zoom: 14 },
+  { id: "petworth", label: "Petworth", lat: 38.9425, lng: -77.0277, zoom: 14 },
+];
+
 const INCIDENT_META = {
   community: { label: "Community", color: "#0ea5e9" },
   "public-order": { label: "Public Order", color: "#f97316" },
@@ -21,10 +27,14 @@ export default function IncidentMapOverview() {
   const [error, setError] = useState("");
   const [locating, setLocating] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [focusEnabled, setFocusEnabled] = useState(false);
+  const [focusArea, setFocusArea] = useState(NEIGHBORHOOD_PRESETS[0].id);
   const { instance: L, status: leafletStatus, error: leafletError } = useLeaflet();
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
+  const selectedPreset =
+    NEIGHBORHOOD_PRESETS.find((preset) => preset.id === focusArea) || NEIGHBORHOOD_PRESETS[0];
 
   useEffect(() => {
     if (!L || mapRef.current || !mapNodeRef.current) {
@@ -72,6 +82,15 @@ export default function IncidentMapOverview() {
         markersRef.current.push(marker);
       });
   }, [incidents, mapReady, L]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    if (focusEnabled && selectedPreset) {
+      mapRef.current.setView([selectedPreset.lat, selectedPreset.lng], selectedPreset.zoom);
+    } else if (!focusEnabled) {
+      mapRef.current.setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lng], DEFAULT_VIEW.zoom);
+    }
+  }, [focusEnabled, focusArea, mapReady, selectedPreset]);
 
   useEffect(() => {
     loadIncidents();
@@ -139,6 +158,35 @@ export default function IncidentMapOverview() {
           >
             {locating ? "Locating…" : "Use my location"}
           </button>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs text-slate-600 sm:flex sm:items-center sm:justify-between">
+        <label className="flex items-center gap-2 font-semibold text-ink">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-ink focus:ring-ink"
+            checked={focusEnabled}
+            onChange={(event) => setFocusEnabled(event.target.checked)}
+          />
+          Follow a specific neighborhood
+        </label>
+        <div className="mt-2 flex flex-col gap-2 sm:mt-0 sm:flex-row sm:items-center">
+          <select
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 focus:border-ink focus:outline-none disabled:opacity-50"
+            value={focusArea}
+            onChange={(event) => setFocusArea(event.target.value)}
+            disabled={!focusEnabled}
+          >
+            {NEIGHBORHOOD_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-slate-500">
+            {focusEnabled ? "Map centers on your selected community." : "Enable to jump directly to a neighborhood."}
+          </p>
         </div>
       </div>
 

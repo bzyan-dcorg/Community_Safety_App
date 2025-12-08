@@ -423,15 +423,26 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
     setFollowSubmitting(true);
     setFollowError('');
     try {
-      await createFollowUp(incidentId, {
-        status: followStatus,
+      const payload: {
+        status?: string;
+        notes?: string;
+        still_happening?: boolean | null;
+        contacted_authorities?: string | null;
+        feel_safe_now?: boolean | null;
+        safety_sentiment?: string | null;
+        created_by?: string;
+      } = {
         notes: followNotes.trim() || undefined,
         still_happening: followStillHappening,
         contacted_authorities: followContacted,
         feel_safe_now: followFeelSafe,
         safety_sentiment: followSentiment,
         created_by: followAlias.trim() || undefined,
-      });
+      };
+      if (canApprove) {
+        payload.status = followStatus;
+      }
+      await createFollowUp(incidentId, payload);
       setFollowNotes('');
       setFollowComposerOpen(false);
       const refreshed = await fetchIncident(incidentId);
@@ -614,20 +625,27 @@ export function IncidentDetailSheet({ incidentId, visible, onClose, onMutated, o
               {followComposerOpen ? (
                 <>
                   <View style={styles.followComposer}>
-                    <Text style={styles.followControlLabel}>Status</Text>
-                    <View style={styles.followChipRow}>
-                      {STATUS_OPTIONS.map((option) => (
-                        <Pressable
-                          key={option.id}
-                          style={[styles.followChip, followStatus === option.id && styles.followChipActive]}
-                          onPress={() => setFollowStatus(option.id)}>
-                          <Text
-                            style={[styles.followChipLabel, followStatus === option.id && styles.followChipLabelActive]}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                    {canApprove ? (
+                      <>
+                        <Text style={styles.followControlLabel}>Status</Text>
+                        <View style={styles.followChipRow}>
+                          {STATUS_OPTIONS.map((option) => (
+                            <Pressable
+                              key={option.id}
+                              style={[styles.followChip, followStatus === option.id && styles.followChipActive]}
+                              onPress={() => setFollowStatus(option.id)}>
+                              <Text
+                                style={[
+                                  styles.followChipLabel,
+                                  followStatus === option.id && styles.followChipLabelActive,
+                                ]}>
+                                {option.label}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </>
+                    ) : null}
                     <Text style={styles.followControlLabel}>Is it still happening?</Text>
                     <View style={styles.followChipRow}>
                       {PROMPT_CHOICES.map((option) => (

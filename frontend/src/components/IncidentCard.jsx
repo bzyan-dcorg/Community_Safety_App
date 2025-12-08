@@ -403,15 +403,18 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
     setSuccess("");
 
     try {
-      await createFollowUp(incident.id, {
-        status: followStatus,
+      const payload = {
         notes: notes.trim() || undefined,
         still_happening: followStillHappening,
         feel_safe_now: followFeelSafe,
         contacted_authorities: followContacted,
         safety_sentiment: followSentiment,
         created_by: followAlias.trim() || undefined,
-      });
+      };
+      if (canVerify) {
+        payload.status = followStatus;
+      }
+      await createFollowUp(incident.id, payload);
       setNotes("");
       setShowComposer(false);
       setSuccess("Follow-up shared.");
@@ -610,7 +613,7 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
       {authenticated && showComposer && (
         <form onSubmit={handleFollowUpSubmit} className="mt-6 space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-4 xs:p-5">
           <h4 className="text-sm font-semibold text-ink xs:text-base">Record a follow-up</h4>
-          <Segmented value={followStatus} onChange={setFollowStatus} options={STATUS_OPTIONS} />
+          {canVerify && <Segmented value={followStatus} onChange={setFollowStatus} options={STATUS_OPTIONS} />}
           <PromptToggle label="Is it still happening?" value={followStillHappening} onChange={setFollowStillHappening} />
           <PromptToggle label="Do people feel safe now?" value={followFeelSafe} onChange={setFollowFeelSafe} />
           <Segmented value={followContacted} onChange={setFollowContacted} options={CONTACT_OPTIONS} />
@@ -661,6 +664,20 @@ export default function IncidentCard({ incident, onMutated, onRequireAuth = () =
                   {entry.status?.replace("-", " ") || "Update"}
                 </p>
                 {entry.notes && <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{entry.notes}</p>}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(entry.still_happening === true || entry.still_happening === false) && (
+                    <PromptChip label="Ongoing" value={entry.still_happening ? "yes" : "no"} />
+                  )}
+                  {(entry.feel_safe_now === true || entry.feel_safe_now === false) && (
+                    <PromptChip label="Feels safe" value={entry.feel_safe_now ? "yes" : "no"} />
+                  )}
+                  {entry.contacted_authorities && (
+                    <PromptChip label="Authorities" value={entry.contacted_authorities} />
+                  )}
+                  {entry.safety_sentiment && (
+                    <PromptChip label="Sentiment" value={entry.safety_sentiment} />
+                  )}
+                </div>
               </li>
             ))}
           </ul>

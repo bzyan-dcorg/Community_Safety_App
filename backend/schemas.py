@@ -87,7 +87,7 @@ class IncidentUpdate(BaseModel):
 
 
 class IncidentFollowUpBase(BaseModel):
-    status: str = Field(..., max_length=50)
+    status: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=2000)
     still_happening: Optional[bool] = None
     contacted_authorities: Optional[ContactedAuthorities] = None

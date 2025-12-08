@@ -503,14 +503,21 @@ def create_follow_up(
     incident_id: int,
     payload: schemas.IncidentFollowUpCreate,
     db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(optional_current_user),
 ):
     incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
+    can_update_status = bool(current_user and current_user.role in VERIFIER_ROLES)
+    requested_status = (payload.status or "").strip() or None
+    follow_up_status = incident.status or "unverified"
+    if can_update_status and requested_status:
+        follow_up_status = requested_status
+
     follow_up = models.IncidentFollowUp(
         incident_id=incident.id,
-        status=payload.status,
+        status=follow_up_status,
         notes=(payload.notes or "").strip() or None,
         still_happening=payload.still_happening,
         contacted_authorities=payload.contacted_authorities,
@@ -520,8 +527,8 @@ def create_follow_up(
     )
     db.add(follow_up)
 
-    if payload.status:
-        incident.status = payload.status
+    if can_update_status and requested_status:
+        incident.status = requested_status
     if payload.still_happening is not None:
         incident.still_happening = payload.still_happening
     if payload.feel_safe_now is not None:
